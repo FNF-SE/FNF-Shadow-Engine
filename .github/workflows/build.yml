@@ -111,11 +111,32 @@ jobs:
               ;;
           esac
 
+      - name: Install ldid
+        if: startsWith(inputs.name, 'iOS')
+        shell: bash
+        run: |
+          brew update
+
+          if brew tap | grep -q "aws/tap"; then
+            brew tap --repair
+            brew untap aws/tap 2>/dev/null || true
+            brew tap aws/tap
+          fi
+
+          brew install ldid || {
+            brew tap --force homebrew/core || true
+            brew install ldid
+          }
+
       - name: Make IPA
         if: startsWith(inputs.name, 'iOS')
         shell: bash
         run: |
-          brew install ldid
+          if ! command -v ldid &> /dev/null; then
+            echo "ldid not found, installing..."
+            brew install ldid
+          fi
+          
           for config in Debug-iphoneos Debug-iphonesimulator Release-iphoneos Release-iphonesimulator; do
             if [ ! -d "export/release/ios/build/$config" ]; then
               continue
