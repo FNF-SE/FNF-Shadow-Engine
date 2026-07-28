@@ -115,6 +115,11 @@ jobs:
         if: startsWith(inputs.name, 'iOS')
         shell: bash
         run: |
+          # https://github.com/actions/runner-images/issues/14232
+          brew trust aws/tap
+          brew trust azure/bicep
+          brew trust hashicorp/tap
+
           brew install ldid
           for config in Debug-iphoneos Debug-iphonesimulator Release-iphoneos Release-iphonesimulator; do
             if [ ! -d "export/release/ios/build/$config" ]; then
