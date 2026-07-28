@@ -10,3 +10,5 @@
 - HSV Note Skin Textures
 - Rewrite Source with Null Safety and Haxe 4.3 features(?) 
 - Find Artist for our Credits icons
+- Add Metallic Funkin (Legacy) and 2hot only can (FEATURE_JOKES)
+- Add CLAUDE.md and AGENTS.md
