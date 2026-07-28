@@ -138,9 +138,7 @@ class Project extends HXProject
 		var unicode:Bool = #if (target.unicode) true #else false #end;
 		var targetPlatform:String = isWeb() ? "Web (HTML5)" : isIOS() ? "iOS" : isAndroid() ? "Android" : isWindows() ? "Windows" : isMac() ? "Mac" : isLinux() ? "Linux" : "Unknown";
 
-		if (isHashLink())
-			targetPlatform = "Hashlink (" + targetPlatform + ")";
-		else if (isIOSSimulator())
+		if (isIOSSimulator())
 			targetPlatform = "Simulator (" + targetPlatform + ")";
 
 		trace('');
@@ -191,9 +189,6 @@ class Project extends HXProject
 
 		app.main = MAIN_CLASS;
 		app.file = EXECUTABLE;
-
-		if (isHashLink())
-			PRELOADER = "flixel.system.FlxBasePreloader";
 		app.preloader = PRELOADER;
 
 		var buildDir = 'export/${isDebug() ? 'debug' : 'release'}${FEATURE_TRACY.isEnabled() ? "-tracy" : ""}/' ;
@@ -233,9 +228,9 @@ class Project extends HXProject
 	{
 		FEATURE_MODS.integrate(isDesktop() || isMobile());
 		FEATURE_HSCRIPT.integrate(true);
-		FEATURE_LUA.integrate((isDesktop() && !isHashLink()) || isMobile());
-		FEATURE_VIDEOS.integrate((isDesktop() && !isHashLink()) || (isMobile() && !isIOSSimulator()));
-		FEATURE_DISCORD_RPC.integrate((isDesktop() && !isHashLink()));
+		FEATURE_LUA.integrate(isDesktop() || isMobile());
+		FEATURE_VIDEOS.integrate(isDesktop() || (isMobile() && !isIOSSimulator()));
+		FEATURE_DISCORD_RPC.integrate(isDesktop());
 		FEATURE_MOBILE_CONTROLS.integrate(isMobile());
 		FEATURE_DCE.integrate(false);
 		FEATURE_TRACY.integrate(false);
@@ -255,8 +250,6 @@ class Project extends HXProject
 		setHaxedef("lime_disable_assets_version");
 		setHaxedef("openfl_dpi_aware");
 		setHaxedef("openfl_pool_events");
-		if (isHashLink())
-			setHaxedef("openfl_enable_handle_error");
 
 		setHaxedef("HXCPP_CHECK_POINTER");
 		setHaxedef("HXCPP_STACK_LINE");
@@ -750,9 +743,6 @@ class Project extends HXProject
 	
 	inline function isIOSSimulator():Bool
 		return target == Platform.IOS && targetFlags.exists("simulator");
-
-	inline function isHashLink():Bool
-		return targetFlags.exists("hl");
 
 	inline function isCPP():Bool
 		return defines.exists("cpp");
