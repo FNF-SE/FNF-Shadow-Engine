@@ -117,8 +117,6 @@ jobs:
         run: |
           # https://github.com/actions/runner-images/issues/14232
           brew trust aws/tap
-          brew trust azure/bicep
-          brew trust hashicorp/tap
 
           brew install ldid
           for config in Debug-iphoneos Debug-iphonesimulator Release-iphoneos Release-iphonesimulator; do
