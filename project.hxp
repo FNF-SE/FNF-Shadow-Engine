@@ -229,7 +229,7 @@ class Project extends HXProject
 		FEATURE_MODS.integrate(isDesktop() || isMobile());
 		FEATURE_HSCRIPT.integrate(true);
 		FEATURE_LUA.integrate(isDesktop() || isMobile());
-		FEATURE_VIDEOS.integrate(isDesktop() || (isMobile() && !isIOSSimulator()));
+		FEATURE_VIDEOS.integrate(isDesktop() || isMobile());
 		FEATURE_DISCORD_RPC.integrate(isDesktop());
 		FEATURE_MOBILE_CONTROLS.integrate(isMobile());
 		FEATURE_DCE.integrate(false);
