@@ -131,7 +131,7 @@ class BitmapDataUtil
 		texture.__height = height;
 
 		context.__bindGLTexture2D(texture.__textureID);
-		context.gl.texImage2D(context.gl.TEXTURE_2D, 0, texture.__internalFormat, width, height, 0, texture.__format, context.gl.UNSIGNED_BYTE, null);
+		context.gl.texImage2D(context.gl.TEXTURE_2D, 0, texture.__internalFormat, width, height, 0, texture.__format, context.gl.UNSIGNED_BYTE, 0);
 
 		@:nullSafety(Off)
 		context.__bindGLTexture2D(null);
