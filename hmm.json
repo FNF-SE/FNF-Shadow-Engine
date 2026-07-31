@@ -9,13 +9,13 @@
     {
       "name": "openfl",
       "type": "git",
-      "ref": "7322c7d432622d4c8f2d16885144ce3117746238",
+      "ref": "db5c213084cf07a6264115d5414411bab58666fe",
       "url": "https://github.com/ShadowEngineTeam/openfl"
     },
     {
       "name": "flixel",
       "type": "git",
-      "ref": "5f9e98491eeb2c3ae2a2d29d82079063b069c4c1",
+      "ref": "4bcebe18fa5c1123ec9acdfb579e79e599063b7b",
       "url": "https://github.com/ShadowEngineTeam/flixel"
     },
     {
@@ -27,7 +27,7 @@
     {
       "name": "hxcpp",
       "type": "git",
-      "ref": "49d1c250195a9971f8835a33e1a5872f05d4ae29",
+      "ref": "34e9a6ee8695981e31aafa30433454a6236b2afd",
       "url": "https://github.com/ShadowEngineTeam/hxcpp"
     },
     {
