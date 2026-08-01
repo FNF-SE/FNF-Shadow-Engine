@@ -4,7 +4,6 @@
 - Add ShadowLua and Deprecate PsychLua (OOP Lua)
 - Add V-Slice Menus(?) and Wide Screen Support
 - Add editors for V-Slice Menus(?)
-- Add Base Game Files
 - Add multikey support(?)
 - Rewrite the Input System(?)
 - HSV Note Skin Textures
