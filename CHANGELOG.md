@@ -23,6 +23,13 @@
 - Updated some haxelib refs
 - Updated gamemode config
 - Updated touchpad assets
+- Base Game has been added
+- Enabled videos for the iOS simulator
+- Sound extensions limited to ogg and mp3 for now
+- HScript improvements a bit
+- Fixed score popup memory leak
+- `gf-empty` character replaces the transparent 1x1 girlfriend placeholder
+- Fixed MemoryCounter build on MinGW
 
 ## 0.9.0 - 2026-05-20
 
