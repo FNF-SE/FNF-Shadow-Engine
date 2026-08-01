@@ -15,7 +15,7 @@
     {
       "name": "flixel",
       "type": "git",
-      "ref": "4bcebe18fa5c1123ec9acdfb579e79e599063b7b",
+      "ref": "75026dfcb4ee898b5c937796f7b6319e21ab98e3",
       "url": "https://github.com/ShadowEngineTeam/flixel"
     },
     {
@@ -87,7 +87,7 @@
     {
       "name": "flixel-animate",
       "type": "git",
-      "ref": "700e0bfe1df400ca3d20b49de5ee74273b8e2803",
+      "ref": "4b02f68790e2b7683828371258414cf7a6db2bb9",
       "url": "https://github.com/ShadowEngineTeam/flixel-animate"
     },
     {
