@@ -151,11 +151,11 @@ class SystemInfo extends FramerateCategory
 		{
 			if (flixel.FlxG.stage.context3D != null && flixel.FlxG.stage.context3D.gl != null)
 			{
-				gpuName = Std.string(flixel.FlxG.stage.context3D.gl.getString(flixel.FlxG.stage.context3D.gl.RENDERER)).split("/")[0].trim();
+				gpuName = Std.string(flixel.FlxG.stage.context3D.gl.getParameter(flixel.FlxG.stage.context3D.gl.RENDERER)).split("/")[0].trim();
 
 				if (openfl.display3D.Context3D.__glMemoryTotalAvailable != -1)
 				{
-					var vRAMBytes:Int = cast flixel.FlxG.stage.context3D.gl.getInteger(openfl.display3D.Context3D.__glMemoryTotalAvailable);
+					var vRAMBytes:Int = cast flixel.FlxG.stage.context3D.gl.getParameter(openfl.display3D.Context3D.__glMemoryTotalAvailable);
 					if (vRAMBytes == 1000 || vRAMBytes == 1 || vRAMBytes <= 0)
 						Log.error('Unable to grab GPU VRAM');
 					else
