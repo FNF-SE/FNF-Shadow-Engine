@@ -240,7 +240,6 @@ class GameOverSubstate extends MusicBeatSubstate
 		return FlxMath.lerp(target, base, Math.pow(precision, deltaTime / duration));
 	}
 
-	/** Hands PlayState's boyfriend group back, or disposes of the death character we made. */
 	var released:Bool = false;
 
 	function releaseBoyfriend():Void
@@ -278,14 +277,12 @@ class GameOverSubstate extends MusicBeatSubstate
 		return quotes[FlxG.random.int(0, quotes.length - 1)];
 	}
 
-	/** Prefers a `-pixel` variant of a sound when the mod folder actually ships one. */
 	function checkFile(file:String, folder:String):String
 	{
 		if (!PlayState.isPixelStage)
 			return file;
 
 		var pixelName:String = file + '-pixel';
-		// fileExists covers base assets as well as mods -- modFolders alone would miss assets/.
 		for (ext in Paths.SOUND_EXTS)
 			if (Paths.fileExists('$folder/$pixelName.$ext', SOUND))
 				return pixelName;
