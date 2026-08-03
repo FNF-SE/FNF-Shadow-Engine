@@ -33,7 +33,7 @@
     {
       "name": "SScript",
       "type": "git",
-      "ref": "2176b9f97772d7d68551b1ad46097fd3a1bf49fd",
+      "ref": "d8536263f9d61c2528e2bce8e255734ca7a7b5c6",
       "url": "https://github.com/ShadowEngineTeam/ShadowScript"
     },
     {
@@ -57,7 +57,7 @@
     {
       "name": "format",
       "type": "git",
-      "ref": "9d69fb342d030fa120d2deafafbbffad248332b8",
+      "ref": "2cc9cb1a565ac389bdff3a3cc9987a6db82ef84b",
       "url": "https://github.com/HaxeFoundation/format"
     },
     {
