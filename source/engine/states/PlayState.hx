@@ -1788,6 +1788,9 @@ class PlayState extends MusicBeatState
 
 		super.update(elapsed);
 
+		if (!inCutscene && !paused && !freezeCamera && camTween != null)
+			FlxG.camera.focusOn(FlxPoint.get(camFollow.x, camFollow.y));
+
 		if (botplayTxt != null && botplayTxt.visible)
 		{
 			botplaySine += 180 * elapsed;
@@ -1857,9 +1860,13 @@ class PlayState extends MusicBeatState
 			recalculateRating();
 		}
 
-		if (camZooming)
+		if (!inCutscene && !paused && !freezeCamera)
 		{
-			FlxG.camera.zoom = FlxMath.lerp(defaultCamZoom, FlxG.camera.zoom, Math.exp(-elapsed * 3.125 * camZoomingDecay * playbackRate));
+			if (zoomTween != null)
+				FlxG.camera.zoom = defaultCamZoom; // tween already eased it, don't lerp again
+			else
+				FlxG.camera.zoom = FlxMath.lerp(defaultCamZoom, FlxG.camera.zoom, Math.exp(-elapsed * 3.125 * camZoomingDecay * playbackRate));
+
 			camHUD.zoom = FlxMath.lerp(1, camHUD.zoom, Math.exp(-elapsed * 3.125 * camZoomingDecay * playbackRate));
 		}
 
@@ -2620,7 +2627,7 @@ class PlayState extends MusicBeatState
 				zoomTween = FlxTween.tween(this, {defaultCamZoom: targetZoom}, (Conductor.stepCrochet / 1000) * floaties[0], {
 					onStart: (x) ->
 					{
-						// camZooming = false;
+						camZooming = false;
 						camZoomingDecay = 7;
 					},
 					ease: easeFunc,
@@ -2628,7 +2635,7 @@ class PlayState extends MusicBeatState
 					{
 						defaultCamZoom = targetZoom;
 						camZoomingDecay = 1;
-						// camZooming = true;
+						camZooming = true;
 						zoomTween = null;
 					}
 				});
