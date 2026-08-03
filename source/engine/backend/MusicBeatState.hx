@@ -630,22 +630,30 @@ class MusicBeatState extends FlxTransitionableState implements IMusicState
 
 	public function setOnLuas(variable:String, arg:Dynamic, exclusions:Array<String> = null)
 	{
+		#if FEATURE_LUA
 		scripts.setOnLuas(variable, arg, exclusions);
+		#end
 	}
 
 	public function setOnHScript(variable:String, arg:Dynamic, exclusions:Array<String> = null)
 	{
+		#if FEATURE_HSCRIPT
 		scripts.setOnHScript(variable, arg, exclusions);
+		#end
 	}
 
 	public function startLuasNamed(luaFile:String, ?doFileMethod:String->Bool):Bool
 	{
+		#if FEATURE_LUA
 		return scripts.startLuasNamed(luaFile, doFileMethod);
+		#end
 	}
 
 	public function startHScriptsNamed(scriptFile:String, ?doFileMethod:String->Bool):Bool
 	{
+		#if FEATURE_HSCRIPT
 		return scripts.startHScriptsNamed(scriptFile, doFileMethod);
+		#end
 	}
 
 	public function initHScript(file:String):Void
