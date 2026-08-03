@@ -558,12 +558,20 @@ class MusicBeatSubstate extends FlxSubState implements IMusicState
 
 	public function startLuasNamed(luaFile:String, ?doFileMethod:String->Bool):Bool
 	{
+		#if FEATURE_LUA
 		return scripts.startLuasNamed(luaFile, doFileMethod);
+		#else
+		return false;
+		#end
 	}
 
 	public function startHScriptsNamed(scriptFile:String, ?doFileMethod:String->Bool):Bool
 	{
+		#if FEATURE_HSCRIPT
 		return scripts.startHScriptsNamed(scriptFile, doFileMethod);
+		#else
+		return false;
+		#end
 	}
 
 	public function initHScript(file:String):Void
