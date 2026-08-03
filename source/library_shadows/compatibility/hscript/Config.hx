@@ -71,6 +71,11 @@ class Config {
 	// Incase any of your files fail
 	// These are the module names
 	public static final DISALLOW_TYPEDEFS = [
-		"haxe"
+
+	];
+
+	@:unreflective
+	public static final IMPORT_BLACKLIST:Array<String> = [
+
 	];
 }
