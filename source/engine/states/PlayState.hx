@@ -2540,6 +2540,10 @@ class PlayState extends MusicBeatState
 				var duration:Float = floaties[2] * (Conductor.stepCrochet / 1000);
 				switch (value1.toString().toLowerCase())
 				{
+					case "bf" | "0": {
+						targetX += boyfriend.getMidpoint().x - 100 - boyfriend.cameraPosition[0] + boyfriendCameraOffset[0];
+						targetY += boyfriend.getMidpoint().y - 100 + boyfriend.cameraPosition[1] + boyfriendCameraOffset[1];
+					}
 					case "dad" | "1": {
 						targetX += dad.getMidpoint().x + 150 + dad.cameraPosition[0] + opponentCameraOffset[0];
 						targetY += dad.getMidpoint().y - 100 + dad.cameraPosition[1] + opponentCameraOffset[1];
@@ -2547,13 +2551,6 @@ class PlayState extends MusicBeatState
 					case "gf" | "2": {
 						targetX += gf.getMidpoint().x + gf.cameraPosition[0] - girlfriendCameraOffset[0];
 						targetY += gf.getMidpoint().y + gf.cameraPosition[1] - girlfriendCameraOffset[1];
-					}
-					case "position" | "-1": {
-						// is nothing
-					}
-					default: { // "" / "bf" / "0" — Boyfriend is the default target
-						targetX += boyfriend.getMidpoint().x - 100 - boyfriend.cameraPosition[0] + boyfriendCameraOffset[0];
-						targetY += boyfriend.getMidpoint().y - 100 + boyfriend.cameraPosition[1] + boyfriendCameraOffset[1];
 					}
 				}
 
