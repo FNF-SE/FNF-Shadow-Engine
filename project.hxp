@@ -17,7 +17,7 @@ class Project extends HXProject
 
 	static final TITLE:String = "Friday Night Funkin': Shadow Engine";
 	static final TITLE_ANDROID:String = "FNF: Shadow Engine";
-	static final TITLE_IOS:String = "FNF\u2002Shadow\u2002Engine";
+	static final TITLE_IOS:String = "FNF Shadow Engine";
 	static final EXECUTABLE:String = "ShadowEngine";
 	static final VERSION:String = "0.10.0";
 	static final BUILD_NUMBER:Int = 850;
