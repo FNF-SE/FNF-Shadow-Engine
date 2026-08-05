@@ -349,7 +349,8 @@ class TypedTouchButton<T:FlxSprite> extends FlxSprite implements IFlxInput
 		if (input.justPressed)
 		{
 			currentInput = input;
-			onDownHandler();
+			if (status != TouchButton.PRESSED)
+				onDownHandler();
 		}
 		else if (status == TouchButton.NORMAL)
 		{
@@ -426,6 +427,38 @@ class TypedTouchButton<T:FlxSprite> extends FlxSprite implements IFlxInput
 		status = TouchButton.NORMAL;
 		input.release();
 		onOut.fire(); // Order matters here, because onOut.fire() could cause a state change and destroy this object.
+	}
+
+	/**
+	 * Fires this button's down state immediately, bypassing the once-per-frame
+	 * `justPressed` poll. Used by `PreciseInputManager` so a real touch-down
+	 * doesn't have to wait for the next render frame to register - covers the
+	 * plain "touch landed on this button" case only; the swipe-to-press and
+	 * `maxInputMovement` cancel-tracking behavior below still only run through
+	 * the normal per-frame poll, since those need continuous movement tracking
+	 * this one-shot call doesn't have.
+	 *
+	 * Deliberately does not set `currentInput` - there's no real touch/mouse
+	 * `IFlxInput` available at a raw-event call site, only a screen position.
+	 * The next per-frame poll backfills `currentInput` once it catches up to
+	 * the same touch (see the `status != PRESSED` guard in `updateStatus`,
+	 * which is what stops that poll from also re-firing `onDown`).
+	 */
+	public function firePreciseDown():Void
+	{
+		if (status != TouchButton.PRESSED)
+			onDownHandler();
+	}
+
+	/**
+	 * Fires this button's up state immediately. Counterpart to `firePreciseDown`.
+	 * Safe to call even if the normal poll never got a chance to set
+	 * `currentInput` for this touch (a very fast tap-and-release) - `onUpHandler`
+	 * doesn't depend on it.
+	 */
+	public function firePreciseUp():Void
+	{
+		onUpHandler();
 	}
 
 	function set_label(Value:T):T
