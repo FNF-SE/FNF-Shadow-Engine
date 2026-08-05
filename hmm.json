@@ -3,19 +3,19 @@
     {
       "name": "lime",
       "type": "git",
-      "ref": "c61d8c18364020ccad3219130ae7c6371a3dc0bf",
+      "ref": "5ed05b50ae18975d2a15e53de61c0ccdef9331ad",
       "url": "https://github.com/ShadowEngineTeam/lime"
     },
     {
       "name": "openfl",
       "type": "git",
-      "ref": "f73da1140a99ad6bb41087c6a9c6457968e00ae4",
+      "ref": "eac430b1bbff61555bee0a6a4cf1a91bfa6aeb41",
       "url": "https://github.com/ShadowEngineTeam/openfl"
     },
     {
       "name": "flixel",
       "type": "git",
-      "ref": "b5121a92edcbc08169948440fd082e66224c4254",
+      "ref": "bae80893d0bdd54a2f81e066033bc1fc9ca00bf9",
       "url": "https://github.com/ShadowEngineTeam/flixel"
     },
     {
