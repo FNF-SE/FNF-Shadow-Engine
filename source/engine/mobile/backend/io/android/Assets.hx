@@ -229,7 +229,9 @@ Array<unsigned char> Assets_obj::native_getBytes(::String file)
 		return null();
 	}
 
+	hx::ExitGCFreeZone();
 	Array<unsigned char> buffer = Array_obj<unsigned char>::__new((int)len, (int)len);
+	hx::EnterGCFreeZone();
 
 	int fd;
 	off_t outStart;
