@@ -173,7 +173,7 @@ class StoryMenuState extends MusicBeatState
 
 		if (!blockInput)
 		{
-			if(loadedWeeks.length <= 1)
+			if(loadedWeeks.length >= 1)
 			{
 				if (Funkin.controls.UI_UP_P || Funkin.controls.UI_DOWN_P)
 					changeWeek(Funkin.controls.UI_UP_P ? -1 : 1, true);
