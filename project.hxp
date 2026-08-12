@@ -256,6 +256,8 @@ class Project extends HXProject
 		setHaxedef("HXCPP_STACK_TRACE");
 		setHaxedef("HXCPP_CATCH_SEGV");
 
+		setHaxedef("HXCPP_GC_BIG_BLOCKS"); // still totally unsure btw!
+
 		setHaxedef("USING_SHADOW_ENGINE");
 
 		if (FEATURE_DCE.isDisabled())
