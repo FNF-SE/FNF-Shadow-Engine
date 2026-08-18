@@ -3,13 +3,13 @@
     {
       "name": "lime",
       "type": "git",
-      "ref": "717f52ad1e2b5498343d6e9c78bd167fa6c3274a",
+      "ref": "7703d36c67a3ab05f5521937b5e434e02c51e9ad",
       "url": "https://github.com/ShadowEngineTeam/lime"
     },
     {
       "name": "openfl",
       "type": "git",
-      "ref": "1d1a477efaecfe032745b82dd390a11ef8d5d7c3",
+      "ref": "cd24f9a701852da2158a64abe33a83ed80ee5f73",
       "url": "https://github.com/ShadowEngineTeam/openfl"
     },
     {
