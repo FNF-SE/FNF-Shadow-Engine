@@ -1,6 +1,6 @@
 package options;
 
-import lime.ui.Haptic;
+//import lime.ui.Haptic;
 
 class GameplaySettingsSubState extends BaseOptionsMenu
 {
@@ -43,9 +43,9 @@ class GameplaySettingsSubState extends BaseOptionsMenu
 		var option:Option = new Option('Disable Reset Button', "If checked, pressing Reset won't do anything.", 'noReset', 'bool');
 		addOption(option);
 
-		var option:Option = new Option('Game Over Vibration', "If checked, your device will vibrate at game over.", 'gameOverVibration', 'bool');
+		/*var option:Option = new Option('Game Over Vibration', "If checked, your device will vibrate at game over.", 'gameOverVibration', 'bool');
 		addOption(option);
-		option.onChange = onChangeVibration;
+		option.onChange = onChangeVibration;*/
 
 		var option:Option = new Option('Hitsound Volume', 'Funny notes does \"Tick!\" when you hit them.', 'hitsoundVolume', 'percent');
 		addOption(option);
@@ -108,11 +108,11 @@ class GameplaySettingsSubState extends BaseOptionsMenu
 		FlxG.autoPause = ClientPrefs.data.autoPause;
 	}
 
-	function onChangeVibration()
+	/*function onChangeVibration()
 	{
 		if (ClientPrefs.data.gameOverVibration)
 		{
 			Haptic.vibrate(0, 500);
 		}
-	}
+	}*/
 }

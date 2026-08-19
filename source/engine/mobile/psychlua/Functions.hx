@@ -1,7 +1,7 @@
 package mobile.psychlua;
 
 #if FEATURE_LUA
-import lime.ui.Haptic;
+//import lime.ui.Haptic;
 import psychlua.FunkinLua;
 import psychlua.LuaUtils;
 import mobile.backend.TouchUtil;
@@ -90,14 +90,14 @@ class MobileFunctions
 			return false;
 		});
 
-		funk.set("vibrate", (?duration:Int, ?period:Int) ->
+		/*funk.set("vibrate", (?duration:Int, ?period:Int) ->
 		{
 			if (duration == null)
 				return FunkinLua.luaTrace('vibrate: No duration specified.');
 			else if (period == null)
 				period = 0;
 			return Haptic.vibrate(period, duration);
-		});
+		});*/
 
 		funk.set("addTouchPad", (DPadMode:String, ActionMode:String) ->
 		{
