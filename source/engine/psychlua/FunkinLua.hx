@@ -56,6 +56,19 @@ class FunkinLua
 
 	public static var customFunctions:Map<String, Dynamic> = new Map<String, Dynamic>();
 
+	#if !HXLUAU_DISABLE_REQUIRE
+	/*public static final MOD_REQUIRE_ALIASES:Map<String, String> = [
+		'curmod' => '',
+		'scripts' => 'scripts',
+		'extra' => 'extra_scripts',
+		'events' => 'custom_events',
+		'notetypes' => 'custom_notetypes',
+		'characters' => 'characters',
+		'stages' => 'stages',
+		'data' => 'data'
+	];*/
+	#end
+
 	public function new(scriptName:String)
 	{
 		#if FEATURE_LUA
@@ -83,6 +96,19 @@ class FunkinLua
 		if (myFolder[0] + '/' == Paths.mods()
 			&& (Mods.currentModDirectory == myFolder[1] || Mods.getGlobalMods().contains(myFolder[1]))) // this is inside mods folder
 			this.modFolder = myFolder[1];
+		#end
+
+		#if !HXLUAU_DISABLE_REQUIRE
+		// Give the script `require`. Scripts loaded from a file resolve relative
+		// paths against their own folder; the root below is what scripts loaded
+		// from a string fall back to, and what the aliases hang off of.
+		/*var requireRoot:String = (modFolder != null) ? Paths.mods(modFolder) : Paths.mods();
+		Require.open(lua, requireRoot);
+		if (modFolder != null)
+		{
+			for (alias => folder in MOD_REQUIRE_ALIASES)
+				Require.setAlias(lua, alias, folder.length > 0 ? '$requireRoot/$folder' : requireRoot);
+		}*/
 		#end
 
 		// Lua shit
