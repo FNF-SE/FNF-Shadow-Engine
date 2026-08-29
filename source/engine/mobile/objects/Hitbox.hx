@@ -76,6 +76,7 @@ class Hitbox extends MobileInputManager implements IMobileControls
 		}
 
 		storedButtonsIDs.clear();
+		expandHintsToScreenEdges();
 		scrollFactor.set();
 		updateTrackedButtons();
 
@@ -97,6 +98,54 @@ class Hitbox extends MobileInputManager implements IMobileControls
 			if (Std.isOfType(field, TouchButton))
 				Reflect.setField(this, fieldName, FlxDestroyUtil.destroy(field));
 		}
+	}
+
+	/**
+	 * Grows the touch area of the hints sitting against the edges of the game so they also
+	 * cover the letterbox bars.
+	 *
+	 * Those bars are outside the game's viewport but still part of the physical screen, so a
+	 * thumb resting on the very edge of the device would otherwise sit in a dead zone, or
+	 * flicker in and out of the lane as it drifts across the boundary.
+	 *
+	 * Only the hit area grows, `offset` keeps the graphic exactly where it was drawn.
+	 */
+	private function expandHintsToScreenEdges():Void
+	{
+		final overscanX:Float = FlxG.scaleMode.offset.x / FlxG.scaleMode.scale.x;
+		final overscanY:Float = FlxG.scaleMode.offset.y / FlxG.scaleMode.scale.y;
+
+		if (overscanX <= 0 && overscanY <= 0)
+			return;
+
+		forEachAlive(function(hint:TouchButton)
+		{
+			if (overscanX > 0)
+			{
+				if (hint.x <= 0)
+				{
+					hint.x -= overscanX;
+					hint.width += overscanX;
+					hint.offset.x -= overscanX;
+				}
+
+				if (hint.x + hint.width >= FlxG.width)
+					hint.width += overscanX;
+			}
+
+			if (overscanY > 0)
+			{
+				if (hint.y <= 0)
+				{
+					hint.y -= overscanY;
+					hint.height += overscanY;
+					hint.offset.y -= overscanY;
+				}
+
+				if (hint.y + hint.height >= FlxG.height)
+					hint.height += overscanY;
+			}
+		});
 	}
 
 	private function createHint(X:Float, Y:Float, Width:Int, Height:Int, Color:Int = 0xFFFFFF):TouchButton

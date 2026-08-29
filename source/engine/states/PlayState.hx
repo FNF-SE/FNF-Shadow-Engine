@@ -1605,6 +1605,9 @@ class PlayState extends MusicBeatState
 				tmr.active = false);
 			FlxTween.globalManager.forEach(function(twn:FlxTween) if (!twn.finished)
 				twn.active = false);
+			#if FEATURE_MOBILE_CONTROLS
+			mobileControls.instance.visible = touchPad.visible = false;
+			#end
 		}
 
 		super.openSubState(SubState);
