@@ -9,7 +9,7 @@
     {
       "name": "openfl",
       "type": "git",
-      "ref": "bb004e8e76c7afb3ac1adb8260f031d59b4adf7f",
+      "ref": "c7867fb0e018a1e051488139e589132b43b2fff8",
       "url": "https://github.com/ShadowEngineTeam/openfl"
     },
     {
@@ -33,7 +33,7 @@
     {
       "name": "SScript",
       "type": "git",
-      "ref": "e80a153f2b5ae572221550d453d0321fad835e65",
+      "ref": "83a5b765e3d94f56383ea7ecda195a1becb26e83",
       "url": "https://github.com/ShadowEngineTeam/ShadowScript"
     },
     {
