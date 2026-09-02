@@ -262,6 +262,48 @@ class PlayState extends MusicBeatState
 	public var totalShit:Int = 0;
 	public var anas:Array<Ana> = [null, null, null, null];
 	public var anaArray:Array<Ana> = [];
+
+	/**
+	 * Stamps the input event sitting in `note`'s lane with the judgement it earned.
+	 *
+	 * The old inline version rebuilt `nearestNote` as a fresh `[strumTime, noteData, sustainLength]`
+	 * array - which, for held sustains and for botplay, meant one array allocation per held note per
+	 * frame. Reuse the array the Ana already owns.
+	 */
+	function updateAna(note:Note):Void
+	{
+		final ana:Ana = anas[note.noteData];
+		if (ana == null)
+			return;
+
+		ana.hit = true;
+		ana.hitJudge = judgeNote(Math.abs(note.strumTime - Conductor.songPosition + ClientPrefs.data.ratingOffset));
+
+		var nearest:Array<Dynamic> = ana.nearestNote;
+		if (nearest == null)
+			ana.nearestNote = nearest = [note.strumTime, note.noteData, note.sustainLength];
+		else
+		{
+			nearest[0] = note.strumTime;
+			nearest[1] = note.noteData;
+			nearest[2] = note.sustainLength;
+		}
+	}
+
+	/** Moves the pending input event for `direction` into the results log, exactly once. */
+	function flushAna(direction:Int):Void
+	{
+		if (direction < 0 || direction >= anas.length)
+			return;
+
+		final ana:Ana = anas[direction];
+		if (ana == null)
+			return;
+
+		anas[direction] = null;
+		anaArray.push(ana);
+	}
+
 	public var songSaveNotes:Array<Dynamic> = [];
 	public var songJudges:Array<String> = [];
 
@@ -542,7 +584,14 @@ class PlayState extends MusicBeatState
 		iconP2.alpha = ClientPrefs.data.healthBarAlpha;
 
 		uiGroup.add(scoreTxt = new FlxText(0, healthBar.y + 40, FlxG.width, "", 20));
-		scoreTxt.setFormat(Paths.font("vcr.ttf"), 20, FlxColor.WHITE, CENTER, OUTLINE, FlxColor.BLACK);
+		// `scoreTxt` is the most frequently re-rasterised object in the game: its string changes on
+		// every note hit, and each change re-runs FlxText.regenGraphic() over a full-width
+		// (FlxG.width x ~55px) surface and re-uploads it to the GPU.
+		//
+		// FlxText's OUTLINE border draws the whole text field 8 extra times; OUTLINE_FAST does it 4.
+		// At borderSize 1.25 on VCR the two are visually near-identical, so mobile takes the cheap
+		// one - that's roughly a 45% cut off every note press. Desktop keeps the original look.
+		scoreTxt.setFormat(Paths.font("vcr.ttf"), 20, FlxColor.WHITE, CENTER, #if mobile OUTLINE_FAST #else OUTLINE #end, FlxColor.BLACK);
 		scoreTxt.scrollFactor.set();
 		scoreTxt.borderSize = 1.25;
 		scoreTxt.visible = !ClientPrefs.data.hideHud && !cpuControlled;
@@ -1730,7 +1779,9 @@ class PlayState extends MusicBeatState
 		super.update(elapsed);
 
 		if (!inCutscene && !paused && !freezeCamera && camTween != null)
-			FlxG.camera.focusOn(FlxPoint.get(camFollow.x, camFollow.y));
+			// `FlxPoint.get()` takes a point out of the pool and never puts it back, so this drained
+			// the pool and allocated a fresh point every frame. `weak()` is reclaimed by focusOn().
+			FlxG.camera.focusOn(FlxPoint.weak(camFollow.x, camFollow.y));
 
 		if (botplayTxt != null && botplayTxt.visible)
 		{
@@ -1794,11 +1845,34 @@ class PlayState extends MusicBeatState
 				if (secondsTotal < 0)
 					secondsTotal = 0;
 
-				if (ClientPrefs.data.timeBarType != 'Song Name')
+				if (ClientPrefs.data.timeBarType != 'Song Name' && secondsTotal != _lastSecondsTotal)
+				{
+					_lastSecondsTotal = secondsTotal;
 					timeTxt.text = FlxStringUtil.formatTime(secondsTotal, false);
+				}
 			}
 
-			recalculateRating();
+			// `recalculateRating()` fans out to ~9 script calls, rebuilds the score string and
+			// re-rasterises `scoreTxt`. Running it unconditionally every frame meant a full software
+			// text re-raster plus a GPU texture re-upload on any frame the score moved, and a pile of
+			// Lua global writes on every other frame. Nothing it produces can change unless one of
+			// these inputs changes, so gate on them. Comparing values (rather than using a dirty
+			// flag) also keeps working when a mod script writes `songScore`/`combo` directly.
+			if (songScore != _lastSongScore
+				|| songMisses != _lastSongMisses
+				|| songHits != _lastSongHits
+				|| combo != _lastCombo
+				|| totalPlayed != _lastTotalPlayed
+				|| totalNotesHit != _lastTotalNotesHit)
+			{
+				_lastSongScore = songScore;
+				_lastSongMisses = songMisses;
+				_lastSongHits = songHits;
+				_lastCombo = combo;
+				_lastTotalPlayed = totalPlayed;
+				_lastTotalNotesHit = totalNotesHit;
+				recalculateRating();
+			}
 		}
 
 		if (!inCutscene && !paused && !freezeCamera)
@@ -1833,7 +1907,10 @@ class PlayState extends MusicBeatState
 
 			while (unspawnNotes.length > 0 && unspawnNotes[0].strumTime - Conductor.songPosition < time)
 			{
-				var dunceNote:Note = unspawnNotes[0];
+				// `shift()` instead of the old `indexOf(dunceNote)` + `splice(index, 1)`: the note is
+				// always at index 0 here, so the scan was pointless and the splice did the same work
+				// shift() does anyway.
+				final dunceNote:Note = unspawnNotes.shift();
 				notes.insert(0, dunceNote);
 				dunceNote.spawned = true;
 				if (dunceNote.mustPress && allowedNotes.contains(dunceNote.noteType))
@@ -1841,18 +1918,20 @@ class PlayState extends MusicBeatState
 				else if (!dunceNote.mustPress && allowedNotes.contains(dunceNote.noteType))
 					dunceNote.texture = noteSkin1;
 
-				final args:Array<Dynamic> = [
-					notes.members.indexOf(dunceNote),
-					dunceNote.noteData,
-					dunceNote.noteType,
-					dunceNote.isSustainNote,
-					dunceNote.strumTime
-				];
-				callOnLuas('onSpawnNote', args);
-				callOnHScript('onSpawnNote', [dunceNote]);
-
-				var index:Int = unspawnNotes.indexOf(dunceNote);
-				unspawnNotes.splice(index, 1);
+				if (hasScripts)
+				{
+					// The note was just inserted at index 0, so the old indexOf() call was a
+					// guaranteed-zero linear scan.
+					final args:Array<Dynamic> = [
+						0,
+						dunceNote.noteData,
+						dunceNote.noteType,
+						dunceNote.isSustainNote,
+						dunceNote.strumTime
+					];
+					callOnLuas('onSpawnNote', args);
+					callOnHScript('onSpawnNote', [dunceNote]);
+				}
 			}
 		}
 
@@ -1869,15 +1948,31 @@ class PlayState extends MusicBeatState
 				{
 					if (startedCountdown)
 					{
-						var fakeCrochet:Float = (60 / SONG.bpm) * 1000;
-						notes.forEachAlive(function(daNote:Note)
+						// Walked with an indexed reverse loop rather than `forEachAlive(closure)`.
+						// The closure was allocated every frame, and the callbacks below
+						// (goodNoteHit/opponentNoteHit/noteMiss -> invalidateNote) splice
+						// `notes.members` while it is being iterated, which forEachAlive doesn't
+						// account for - iterating backwards makes the removals safe.
+						final fakeCrochet:Float = (60 / SONG.bpm) * 1000;
+						final scrollSpeed:Float = songSpeed / playbackRate;
+						final members:Array<Note> = notes.members;
+						var i:Int = members.length - 1;
+						while (i >= 0)
 						{
-							var strumGroup:FlxTypedGroup<StrumNote> = playerStrums;
-							if (!daNote.mustPress)
-								strumGroup = opponentStrums;
+							if (i >= members.length)
+							{
+								i = members.length - 1;
+								continue;
+							}
 
-							var strum:StrumNote = strumGroup.members[daNote.noteData];
-							daNote.followStrumNote(strum, fakeCrochet, songSpeed / playbackRate);
+							final daNote:Note = members[i];
+							i--;
+							if (daNote == null || !daNote.exists || !daNote.alive)
+								continue;
+
+							final strumGroup:FlxTypedGroup<StrumNote> = daNote.mustPress ? playerStrums : opponentStrums;
+							final strum:StrumNote = strumGroup.members[daNote.noteData];
+							daNote.followStrumNote(strum, fakeCrochet, scrollSpeed);
 
 							if (daNote.mustPress)
 							{
@@ -1886,13 +1981,7 @@ class PlayState extends MusicBeatState
 									&& daNote.canBeHit
 									&& (daNote.isSustainNote || daNote.strumTime <= Conductor.songPosition))
 								{
-									if (anas[daNote.noteData] != null)
-									{
-										anas[daNote.noteData].hit = true;
-										var noteDiff:Float = Math.abs(daNote.strumTime - Conductor.songPosition + ClientPrefs.data.ratingOffset);
-										anas[daNote.noteData].hitJudge = judgeNote(noteDiff);
-										anas[daNote.noteData].nearestNote = [daNote.strumTime, daNote.noteData, daNote.sustainLength];
-									}
+									updateAna(daNote);
 									goodNoteHit(daNote);
 								}
 							}
@@ -1911,15 +2000,17 @@ class PlayState extends MusicBeatState
 								daNote.active = daNote.visible = false;
 								invalidateNote(daNote);
 							}
-						});
+						}
 					}
 					else
 					{
-						notes.forEachAlive(function(daNote:Note)
+						for (daNote in notes.members)
 						{
+							if (daNote == null || !daNote.exists || !daNote.alive)
+								continue;
 							daNote.canBeHit = false;
 							daNote.wasGoodHit = false;
-						});
+						}
 					}
 				}
 			}
@@ -1942,9 +2033,17 @@ class PlayState extends MusicBeatState
 		}
 		#end
 
-		setOnScripts('cameraX', camFollow.x);
-		setOnScripts('cameraY', camFollow.y);
-		setOnScripts('botPlay', cpuControlled);
+		if (hasScripts)
+		{
+			setOnScripts('cameraX', camFollow.x);
+			setOnScripts('cameraY', camFollow.y);
+			// Unlike the camera position, this only ever changes when botplay is toggled.
+			if (cpuControlled != _lastCpuControlled)
+			{
+				_lastCpuControlled = cpuControlled;
+				setOnScripts('botPlay', cpuControlled);
+			}
+		}
 	}
 
 	// Health icon updaters
@@ -2676,6 +2775,11 @@ class PlayState extends MusicBeatState
 		#if FEATURE_MOBILE_CONTROLS
 		mobileControls.instance.visible = touchPad.visible = false;
 		#end
+
+		// Hand any still-pending input events to the results log, so the last press in each lane
+		// isn't dropped from the hit graph.
+		for (direction in 0...anas.length)
+			flushAna(direction);
 		// Should kill you if you tried to cheat
 		if (!startingSong)
 		{
@@ -2822,6 +2926,20 @@ class PlayState extends MusicBeatState
 	// Stores The Cached PopUpRating Sprites As String
 	public var ratingsCache:Map<String, FlxSprite> = new Map<String, FlxSprite>();
 
+	/** Reused scratch buffer for splitting the combo into digits, see popUpScore(). */
+	final _comboDigits:Array<Int> = [];
+
+	// Last values `recalculateRating()` was run against, see update(). Seeded to impossible values so
+	// the first frame always recalculates.
+	var _lastSongScore:Int = -1;
+	var _lastSongMisses:Int = -1;
+	var _lastSongHits:Int = -1;
+	var _lastCombo:Int = -1;
+	var _lastTotalPlayed:Int = -1;
+	var _lastTotalNotesHit:Float = -1;
+	var _lastSecondsTotal:Int = -1;
+	var _lastCpuControlled:Null<Bool> = null;
+
 	private function cachePopUpScore()
 	{
 		var uiPrefix:String = '';
@@ -2846,6 +2964,61 @@ class PlayState extends MusicBeatState
 			var leRating = new FlxSprite().loadGraphic(Paths.image(ratingImage));
 			ratingsCache.set(ratingImage, leRating);
 		}
+
+		// The combo sprite used to go through Paths.image() on every single note hit, which means a
+		// mod-folder string build plus a FileSystem.exists() syscall per press on mobile. Cache it
+		// like the ratings/numbers so popUpScore() only ever does loadGraphicFromSprite().
+		final comboImage:String = uiPrefix + 'combo' + uiSuffix;
+		if (!ratingsCache.exists(comboImage))
+		{
+			final comboGraphic:flixel.graphics.FlxGraphic = Paths.image(comboImage);
+			if (comboGraphic != null)
+				ratingsCache.set(comboImage, new FlxSprite().loadGraphic(comboGraphic));
+		}
+	}
+
+	/**
+	 * Grabs a dead sprite out of `comboGroup` to reuse, or grows the group by one if every sprite is
+	 * still on screen.
+	 *
+	 * The old code did `new FlxSprite()` for the rating, the combo sprite and every combo digit on
+	 * every note hit, then `destroy()`d them from a tween callback - so a note press allocated 3-6
+	 * sprites and threw away 3-6 more, and hxcpp had to collect them mid-song. Worse, the callback
+	 * cleared `container` *before* `destroy()`, which is exactly what `FlxBasic.destroy()` uses to
+	 * unregister itself, so every destroyed sprite stayed in `comboGroup.members` forever - the
+	 * group grew for the whole song and got walked twice a frame by update/draw.
+	 */
+	function getComboSprite():FlxSprite
+	{
+		for (spr in comboGroup.members)
+		{
+			if (spr != null && !spr.exists)
+			{
+				FlxTween.cancelTweensOf(spr);
+				spr.revive();
+				spr.alpha = 1;
+				spr.angle = 0;
+				spr.velocity.set();
+				spr.acceleration.set();
+				spr.scale.set(1, 1);
+				spr.offset.set();
+				return spr;
+			}
+		}
+
+		final spr:FlxSprite = new FlxSprite();
+		comboGroup.add(spr);
+		return spr;
+	}
+
+	/** Retires a combo sprite without destroying it, so `getComboSprite()` can hand it back out. */
+	static function retireComboSprite(spr:FlxSprite):Void
+	{
+		if (spr == null)
+			return;
+		spr.kill();
+		spr.velocity.set();
+		spr.acceleration.set();
 	}
 
 	private function popUpScore(note:Note = null):Void
@@ -2855,15 +3028,19 @@ class PlayState extends MusicBeatState
 
 		if (!ClientPrefs.data.comboStacking && comboGroup.members.length > 0)
 		{
-			for (spr in comboGroup)
-			{
-				spr.destroy();
-				comboGroup.remove(spr);
-			}
+			// Was `spr.destroy(); comboGroup.remove(spr);` while iterating the same group - that
+			// both mutated the collection mid-iteration and burned the sprite. Retire them instead
+			// so the pool can hand them straight back out.
+			for (spr in comboGroup.members)
+				if (spr != null && spr.exists)
+				{
+					FlxTween.cancelTweensOf(spr);
+					retireComboSprite(spr);
+				}
 		}
 
 		var placement:Float = FlxG.width * 0.35;
-		var rating:FlxSprite = new FlxSprite();
+		var rating:FlxSprite = null;
 
 		var judgment:String = Rating.judgeNote(noteDiff);
 		var score:Int = Rating.scoreNote(noteDiff);
@@ -2924,7 +3101,10 @@ class PlayState extends MusicBeatState
 		}
 		if (ClientPrefs.data.popUpRating)
 		{
-			rating.loadGraphicFromSprite(ratingsCache.get(uiPrefix + daRating.image + uiSuffix));
+			rating = getComboSprite();
+			final ratingSource:FlxSprite = ratingsCache.get(uiPrefix + daRating.image + uiSuffix);
+			if (ratingSource != null)
+				rating.loadGraphicFromSprite(ratingSource);
 			rating.screenCenter();
 			rating.x = placement - 40;
 			rating.y -= 60;
@@ -2938,7 +3118,10 @@ class PlayState extends MusicBeatState
 			rating.pixelPerfectRender = !antialias;
 			rating.pixelPerfectPosition = !antialias;
 
-			var comboSpr:FlxSprite = new FlxSprite().loadGraphic(Paths.image(uiPrefix + 'combo' + uiSuffix));
+			var comboSpr:FlxSprite = getComboSprite();
+			final comboSource:FlxSprite = ratingsCache.get(uiPrefix + 'combo' + uiSuffix);
+			if (comboSource != null)
+				comboSpr.loadGraphicFromSprite(comboSource);
 			comboSpr.screenCenter();
 			comboSpr.x = placement;
 			comboSpr.acceleration.y = FlxG.random.int(200, 300) * playbackRate * playbackRate;
@@ -2951,7 +3134,6 @@ class PlayState extends MusicBeatState
 			comboSpr.pixelPerfectPosition = !antialias;
 			comboSpr.y += 60;
 			comboSpr.velocity.x += FlxG.random.int(1, 10) * playbackRate;
-			comboGroup.add(rating);
 
 			if (!PlayState.isPixelStage)
 			{
@@ -2970,6 +3152,13 @@ class PlayState extends MusicBeatState
 			if (ClientPrefs.data.showNoteTiming && (!ClientPrefs.data.hideHud && showRating) && noteTimingRating == null)
 			{
 				add(noteTimingRating = new FlxText(0, 0, 0, "0ms"));
+				// One-time formatting. Re-applying borderStyle/borderSize/size per hit marked the
+				// text dirty every press, forcing a glyph re-raster and a fresh GPU texture upload.
+				noteTimingRating.borderStyle = #if mobile OUTLINE_FAST #else OUTLINE #end;
+				noteTimingRating.borderSize = 1;
+				noteTimingRating.borderColor = FlxColor.BLACK;
+				noteTimingRating.size = 20;
+				noteTimingRating.camera = camHUD;
 			}
 			if (noteTimingRating != null)
 			{
@@ -2982,12 +3171,7 @@ class PlayState extends MusicBeatState
 					case 'sick':
 						noteTimingRating.color = FlxColor.CYAN;
 				}
-				noteTimingRating.borderStyle = OUTLINE;
-				noteTimingRating.borderSize = 1;
-				noteTimingRating.borderColor = FlxColor.BLACK;
 				noteTimingRating.text = FlxMath.roundDecimal(noteDiffNoAbs / playbackRate, 3) + "ms";
-				noteTimingRating.size = 20;
-				noteTimingRating.camera = camHUD;
 				noteTimingRating.alpha = 1;
 				noteTimingRating.active = true;
 
@@ -3012,26 +3196,31 @@ class PlayState extends MusicBeatState
 				});
 			}
 
-			var seperatedScore:Array<Int> = [];
-
-			var comboStr:String = Std.string(combo);
-
-			for (i in 0...comboStr.length)
+			// Digit split without going through Std.string()/charAt()/parseInt() - that was three
+			// string allocations plus a parse per digit, on every note hit.
+			final seperatedScore:Array<Int> = _comboDigits;
+			seperatedScore.splice(0, seperatedScore.length);
+			var comboLeft:Int = combo < 0 ? 0 : combo;
+			if (comboLeft == 0)
+				seperatedScore.push(0);
+			else
 			{
-				var num = Std.parseInt(comboStr.charAt(i));
-				if (num != null)
-					seperatedScore.push(num);
+				while (comboLeft > 0)
+				{
+					seperatedScore.insert(0, comboLeft % 10);
+					comboLeft = Std.int(comboLeft / 10);
+				}
 			}
 
 			var daLoop:Int = 0;
 			var xThing:Float = 0;
-			if (showCombo)
-				comboGroup.add(comboSpr);
 
 			for (i in seperatedScore)
 			{
-				var numScore:FlxSprite = new FlxSprite();
-				numScore.loadGraphicFromSprite(ratingsCache.get(uiPrefix + 'num' + Std.int(i) + uiSuffix));
+				var numScore:FlxSprite = getComboSprite();
+				final numSource:FlxSprite = ratingsCache.get(uiPrefix + 'num' + i + uiSuffix);
+				if (numSource != null)
+					numScore.loadGraphicFromSprite(numSource);
 				numScore.screenCenter();
 
 				var totalNums:Int = seperatedScore.length;
@@ -3058,14 +3247,13 @@ class PlayState extends MusicBeatState
 				numScore.pixelPerfectPosition = !antialias;
 
 				// if (combo >= 10 || combo == 0)
-				if (showComboNum)
-					comboGroup.add(numScore);
+				if (!showComboNum)
+					numScore.visible = false;
 
 				FlxTween.tween(numScore, {alpha: 0}, 0.2 / playbackRate, {
 					onComplete: function(tween:FlxTween)
 					{
-						numScore.container = null;
-						numScore.destroy();
+						retireComboSprite(numScore);
 					},
 					startDelay: Conductor.crochet * 0.002 / playbackRate,
 					ease: isPixelStage ? EaseUtil.stepped(2) : null
@@ -3080,8 +3268,7 @@ class PlayState extends MusicBeatState
 				startDelay: Conductor.crochet * 0.001 / playbackRate,
 				onComplete: function(tween:FlxTween)
 				{
-					rating.container = null;
-					rating.destroy();
+					retireComboSprite(rating);
 				},
 				ease: isPixelStage ? EaseUtil.stepped(2) : null
 			});
@@ -3089,9 +3276,7 @@ class PlayState extends MusicBeatState
 			FlxTween.tween(comboSpr, {alpha: 0}, 0.2 / playbackRate, {
 				onComplete: function(tween:FlxTween)
 				{
-					comboSpr.container = null;
-					comboSpr.destroy();
-					rating.destroy();
+					retireComboSprite(comboSpr);
 				},
 				startDelay: Conductor.crochet * 0.002 / playbackRate,
 				ease: isPixelStage ? EaseUtil.stepped(2) : null
@@ -3247,12 +3432,35 @@ class PlayState extends MusicBeatState
 	}
 
 	#if FEATURE_MOBILE_CONTROLS
+	// MobileInputID is an `enum abstract ... (Int)`, so these are plain integer comparisons. The old
+	// checks went through `IDs.filter(id -> id.toString().startsWith("EXTRA"))`, which allocated a
+	// closure and a result array and did a Map<MobileInputID, String> lookup plus a substring
+	// compare per id - on the touch path that runs on every note tap and release.
+	static inline function isExtraButtonID(id:MobileInputID):Bool
+		return id == MobileInputID.EXTRA_1 || id == MobileInputID.EXTRA_2;
+
+	static inline function isNoteButtonID(id:MobileInputID):Bool
+		return id == MobileInputID.NOTE_LEFT || id == MobileInputID.NOTE_DOWN || id == MobileInputID.NOTE_UP || id == MobileInputID.NOTE_RIGHT;
+
+	static function resolveButtonCode(button:TouchButton):Int
+	{
+		final ids:Array<MobileInputID> = button.IDs;
+		for (id in ids)
+			if (isExtraButtonID(id))
+				return -1;
+
+		if (ids.length == 0)
+			return -1;
+
+		return isNoteButtonID(ids[0]) ? ids[0] : (ids.length > 1 ? ids[1] : -1);
+	}
+
 	private function onButtonPress(button:TouchButton):Void
 	{
-		if (button.IDs.filter(id -> id.toString().startsWith("EXTRA")).length > 0)
+		final buttonCode:Int = resolveButtonCode(button);
+		if (buttonCode < 0)
 			return;
 
-		var buttonCode:Int = (button.IDs[0].toString().startsWith('NOTE')) ? button.IDs[0] : button.IDs[1];
 		callOnScripts('onButtonPressPre', [buttonCode]);
 		if (button.justPressed)
 			keyPressed(buttonCode);
@@ -3261,37 +3469,61 @@ class PlayState extends MusicBeatState
 
 	private function onButtonRelease(button:TouchButton):Void
 	{
-		if (button.IDs.filter(id -> id.toString().startsWith("EXTRA")).length > 0)
+		final buttonCode:Int = resolveButtonCode(button);
+		if (buttonCode < 0)
 			return;
 
-		var buttonCode:Int = (button.IDs[0].toString().startsWith('NOTE')) ? button.IDs[0] : button.IDs[1];
 		callOnScripts('onButtonReleasePre', [buttonCode]);
-		if (buttonCode > -1)
-			keyReleased(buttonCode);
+		keyReleased(buttonCode);
 		callOnScripts('onButtonRelease', [buttonCode]);
 	}
 	#end
+
+	// Reused per-frame input buffers. These used to be three fresh arrays (plus a push per key)
+	// allocated on every single frame of gameplay.
+	final holdArray:Array<Bool> = [];
+	final pressArray:Array<Bool> = [];
+	final releaseArray:Array<Bool> = [];
 
 	// Hold notes
 	private function keysCheck():Void
 	{
 		// HOLDING
-		var holdArray:Array<Bool> = [];
-		var pressArray:Array<Bool> = [];
-		var releaseArray:Array<Bool> = [];
-		for (key in keysArray)
+		final keyCount:Int = keysArray.length;
+		if (holdArray.length != keyCount)
 		{
-			holdArray.push(Funkin.controls.pressed(key));
-			pressArray.push(Funkin.controls.justPressed(key));
-			releaseArray.push(Funkin.controls.justReleased(key));
+			holdArray.resize(keyCount);
+			pressArray.resize(keyCount);
+			releaseArray.resize(keyCount);
 		}
 
-		for (i in 0...pressArray.length)
-			if (pressArray[i])
+		var anyHold:Bool = false;
+		var anyPress:Bool = false;
+		var anyRelease:Bool = false;
+		for (i in 0...keyCount)
+		{
+			final key:String = keysArray[i];
+			final held:Bool = Funkin.controls.pressed(key);
+			final pressed:Bool = Funkin.controls.justPressed(key);
+			final released:Bool = Funkin.controls.justReleased(key);
+			holdArray[i] = held;
+			pressArray[i] = pressed;
+			releaseArray[i] = released;
+			anyHold = anyHold || held;
+			anyPress = anyPress || pressed;
+			anyRelease = anyRelease || released;
+
+			if (pressed)
+			{
+				// Any ana still sitting in this lane never reached a hit or a miss - record it now
+				// rather than leaving it to be re-pushed by every later note hit.
+				flushAna(i);
 				anas[i] = new Ana(Conductor.songPosition, null, false, "miss", i);
+			}
+		}
 
 		// TO DO: Find a better way to handle controller inputs, this should work for now
-		if (Funkin.controls.controllerMode && pressArray.contains(true))
+		if (Funkin.controls.controllerMode && anyPress)
 			for (i in 0...pressArray.length)
 				if (pressArray[i] && strumsBlocked[i] != true)
 					keyPressed(i);
@@ -3302,8 +3534,22 @@ class PlayState extends MusicBeatState
 		{
 			if (notes.length > 0)
 			{
-				for (n in notes) // I can't do a filter here, that's kinda awesome
+				// `for (n in notes)` allocated a FlxTypedGroupIterator every frame. Walk `members`
+				// directly instead, backwards so goodNoteHit() -> invalidateNote() can splice the
+				// array without skipping entries.
+				final noteMembers:Array<Note> = notes.members;
+				var i:Int = noteMembers.length - 1;
+				while (i >= 0)
 				{
+					if (i >= noteMembers.length)
+					{
+						i = noteMembers.length - 1;
+						continue;
+					}
+
+					final n:Note = noteMembers[i];
+					i--;
+
 					var canHit:Bool = (n != null && !strumsBlocked[n.noteData] && n.canBeHit && n.mustPress && !n.tooLate && !n.wasGoodHit && !n.blockHit);
 
 					if (guitarHeroSustains)
@@ -3315,20 +3561,14 @@ class PlayState extends MusicBeatState
 
 						if (!released)
 						{
-							if (anas[n.noteData] != null)
-							{
-								anas[n.noteData].hit = true;
-								var noteDiff:Float = Math.abs(n.strumTime - Conductor.songPosition + ClientPrefs.data.ratingOffset);
-								anas[n.noteData].hitJudge = judgeNote(noteDiff);
-								anas[n.noteData].nearestNote = [n.strumTime, n.noteData, n.sustainLength];
-							}
+							updateAna(n);
 							goodNoteHit(n);
 						}
 					}
 				}
 			}
 
-			if (!holdArray.contains(true) || endingSong)
+			if (!anyHold || endingSong)
 				playerDance();
 
 			for (i => hold in holdArray)
@@ -3339,7 +3579,7 @@ class PlayState extends MusicBeatState
 		}
 
 		// TO DO: Find a better way to handle controller inputs, this should work for now
-		if ((Funkin.controls.controllerMode || strumsBlocked.contains(true)) && releaseArray.contains(true))
+		if ((Funkin.controls.controllerMode || strumsBlocked.contains(true)) && anyRelease)
 			for (i in 0...releaseArray.length)
 				if (releaseArray[i] || strumsBlocked[i] == true)
 					keyReleased(i);
@@ -3347,16 +3587,24 @@ class PlayState extends MusicBeatState
 
 	function noteMiss(daNote:Note):Void // You didn't hit the key and let it go offscreen, also used by Hurt Notes
 	{
-		// Dupe note remove
-		notes.forEachAlive(function(note:Note)
+		// Dupe note remove.
+		// Indexed reverse loop rather than `forEachAlive(closure)`: the closure allocated on every
+		// miss, and invalidateNote() splices `notes.members` from underneath the iteration.
+		if (daNote.mustPress)
 		{
-			if (daNote != note
-				&& daNote.mustPress
-				&& daNote.noteData == note.noteData
-				&& daNote.isSustainNote == note.isSustainNote
-				&& Math.abs(daNote.strumTime - note.strumTime) < 1)
-				invalidateNote(note);
-		});
+			var i:Int = notes.members.length - 1;
+			while (i >= 0)
+			{
+				final note:Note = notes.members[i];
+				i--;
+				if (note == null || !note.exists || !note.alive || note == daNote)
+					continue;
+				if (daNote.noteData == note.noteData
+					&& daNote.isSustainNote == note.isSustainNote
+					&& Math.abs(daNote.strumTime - note.strumTime) < 1)
+					invalidateNote(note);
+			}
+		}
 		songSaveNotes.push([
 			daNote != null ? daNote.strumTime : Conductor.songPosition,
 			0,
@@ -3378,6 +3626,22 @@ class PlayState extends MusicBeatState
 		];
 		callOnLuas('noteMiss', args);
 		callOnHScript('noteMiss', [daNote]);
+	}
+
+	// `Paths.soundRandom()` resolves a path (mod lookup + FileSystem.exists) every time it's called.
+	// There are only three miss sounds, so resolve them once and pick from the cache.
+	final _missSounds:Array<Null<openfl.media.Sound>> = [null, null, null];
+
+	function getMissSound():Null<openfl.media.Sound>
+	{
+		final index:Int = FlxG.random.int(0, 2);
+		var snd:Null<openfl.media.Sound> = _missSounds[index];
+		if (snd == null)
+		{
+			snd = Paths.sound('missnote' + (index + 1));
+			_missSounds[index] = snd;
+		}
+		return snd;
 	}
 
 	function noteMissPress(direction:Int = 1):Void // You pressed a key when there was no notes to press for this key
@@ -3443,7 +3707,7 @@ class PlayState extends MusicBeatState
 
 		if (note.mustPress)
 		{
-			missnoteSound = FlxG.sound.play(Paths.soundRandom('missnote', 1, 3), FlxG.random.float(0.1, 0.2));
+			missnoteSound = FlxG.sound.play(getMissSound(), FlxG.random.float(0.1, 0.2));
 			if (missnoteSound != null)
 				missnoteSound.pitch = playbackRate;
 		}
@@ -3456,6 +3720,8 @@ class PlayState extends MusicBeatState
 				opponentVocals.volume = 0;
 			doDeathCheck(true);
 		}
+
+		flushAna(direction);
 
 		var lastCombo:Int = combo;
 		combo = 0;
@@ -3496,8 +3762,9 @@ class PlayState extends MusicBeatState
 
 	function opponentNoteHit(note:Note):Void
 	{
+		final noteIndex:Int = notes.members.indexOf(note);
 		final args:Array<Dynamic> = [
-			notes.members.indexOf(note),
+			noteIndex,
 			Math.abs(note.noteData),
 			note.noteType,
 			note.isSustainNote
@@ -3543,7 +3810,7 @@ class PlayState extends MusicBeatState
 		note.hitByOpponent = true;
 
 		final args2:Array<Dynamic> = [
-			notes.members.indexOf(note),
+			noteIndex,
 			Math.abs(note.noteData),
 			note.noteType,
 			note.isSustainNote
@@ -3582,7 +3849,11 @@ class PlayState extends MusicBeatState
 		var leType:String = note.noteType;
 		var char:Character = (!characterPlayingAsDad) ? boyfriend : dad;
 
-		final args:Array<Dynamic> = [notes.members.indexOf(note), leData, leType, isSus];
+		// `notes.members.indexOf()` is a linear scan of every spawned note, and this used to run
+		// twice per hit (once for the "Pre" event, once for the main one). Resolve it once.
+		final noteIndex:Int = notes.members.indexOf(note);
+
+		final args:Array<Dynamic> = [noteIndex, leData, leType, isSus];
 		callOnLuas('goodNoteHitPre', args);
 		callOnHScript('goodNoteHitPre', [note]);
 
@@ -3590,7 +3861,7 @@ class PlayState extends MusicBeatState
 
 		if (ClientPrefs.data.hitsoundVolume > 0 && !note.hitsoundDisabled)
 		{
-			hitsoundSound = FlxG.sound.play(Paths.sound(note.hitsound), ClientPrefs.data.hitsoundVolume);
+			hitsoundSound = FlxG.sound.play(Note.getHitsound(note.hitsound), ClientPrefs.data.hitsoundVolume);
 			if (hitsoundSound != null)
 				hitsoundSound.pitch = playbackRate;
 		}
@@ -3661,9 +3932,10 @@ class PlayState extends MusicBeatState
 			//	combo = 9999;
 			popUpScore(note);
 
-			for (i in anas)
-				if (i != null)
-					anaArray.push(i); // put em all there
+			// This used to push *every* live ana on every tap hit, so `anaArray` grew by up to four
+			// entries per note and filled up with duplicates - unbounded growth over a song, and a
+			// wrong results graph. Hand over just this lane's input event.
+			flushAna(note.noteData);
 			songSaveNotes.push(array);
 			songJudges.push(note.rating);
 		}
@@ -3676,7 +3948,7 @@ class PlayState extends MusicBeatState
 		if (note.isSustainNote && !cpuControlled)
 			songScore += Rating.SUSTAIN_SCORE;
 
-		final args:Array<Dynamic> = [notes.members.indexOf(note), leData, leType, isSus];
+		final args:Array<Dynamic> = [noteIndex, leData, leType, isSus];
 		callOnLuas('goodNoteHit', args);
 		callOnHScript('goodNoteHit', [note]);
 
@@ -3746,6 +4018,7 @@ class PlayState extends MusicBeatState
 		NoteSplash.mainGroup = null;
 		NoteSplash.usePixelTextures = StrumNote.usePixelTextures = Note.usePixelTextures = null;
 		Note.globalRgbShaders = [];
+		Note.globalColorSwaps = [];
 		SustainSplash.close();
 		backend.NoteTypesConfig.clearNoteTypesData();
 

@@ -42,6 +42,24 @@ class Paths
 	public static final currentTrackedSounds:Map<String, Sound> = [];
 	public static var localTrackedAssets:Array<String> = [];
 
+	// `localTrackedAssets` is scanned on every Paths.image()/Paths.sound() call, and it grows to
+	// hundreds of entries during a song. A linear `Array.contains` there costs a string compare per
+	// entry on hot paths like the per-note hitsound, so keep an O(1) membership index next to it.
+	// The array stays public and in sync so mod scripts reflecting into it keep working.
+	static var localTrackedSet:Map<String, Bool> = [];
+
+	inline static function trackLocalAsset(key:String):Void
+	{
+		if (!localTrackedSet.exists(key))
+		{
+			localTrackedSet.set(key, true);
+			localTrackedAssets.push(key);
+		}
+	}
+
+	inline public static function isLocallyTracked(key:String):Bool
+		return localTrackedSet.exists(key);
+
 	// haya I love you for the base cache dump I took to the max
 	public static function excludeAsset(key:String):Void
 	{
@@ -55,7 +73,7 @@ class Paths
 		for (key in currentTrackedAssets.keys())
 		{
 			// if it is not currently contained within the used local assets
-			if (!localTrackedAssets.contains(key) && !dumpExclusions.contains(key))
+			if (!localTrackedSet.exists(key) && !dumpExclusions.contains(key))
 			{
 				final obj:FlxGraphic = currentTrackedAssets.get(key);
 				if (obj == null)
@@ -91,7 +109,7 @@ class Paths
 		// clear all sounds that are cached
 		for (key => asset in currentTrackedSounds)
 		{
-			if (!localTrackedAssets.contains(key) && !dumpExclusions.contains(key) && asset != null)
+			if (!localTrackedSet.exists(key) && !dumpExclusions.contains(key) && asset != null)
 			{
 				Assets.cache.clear(key);
 				currentTrackedSounds.remove(key);
@@ -99,19 +117,27 @@ class Paths
 		}
 
 		localTrackedAssets = [];
+		localTrackedSet = [];
 		openfl.Assets.cache.clear("songs");
 	}
 
 	public static function getPath(file:String, ?type:AssetType = TEXT, ?library:Null<String> = null, ?modsAllowed:Bool = false):String
 	{
 		#if USING_GPU_TEXTURES
-		for (ext in GPU_IMAGE_EXTS)
+		// Guard on the extension *before* building the candidate paths - this runs for every
+		// getPath() call including sounds/text, and the old order allocated a string per GPU
+		// extension every time only to throw them away.
+		if (file.endsWith(IMAGE_EXT))
 		{
-			var gpuPath:String = haxe.io.Path.withoutExtension(file) + '.$ext';
-			if (file.endsWith(IMAGE_EXT) && FileSystem.exists(gpuPath))
+			final base:String = haxe.io.Path.withoutExtension(file);
+			for (ext in GPU_IMAGE_EXTS)
 			{
-				file = gpuPath;
-				break;
+				var gpuPath:String = '$base.$ext';
+				if (FileSystem.exists(gpuPath))
+				{
+					file = gpuPath;
+					break;
+				}
 			}
 		}
 		#end
@@ -291,8 +317,7 @@ class Paths
 		file = modsImages(key);
 		if (currentTrackedAssets.exists(file))
 		{
-			if (!localTrackedAssets.contains(file))
-				localTrackedAssets.push(file);
+			trackLocalAsset(file);
 			return currentTrackedAssets.get(file);
 		}
 		else if (FileSystem.exists(file))
@@ -313,8 +338,7 @@ class Paths
 				file = getPath('images/$key.$ext', getImageAssetType(ext), library);
 				if (currentTrackedAssets.exists(file))
 				{
-					if (!localTrackedAssets.contains(file))
-						localTrackedAssets.push(file);
+					trackLocalAsset(file);
 					return currentTrackedAssets.get(file);
 				}
 				else if (FileSystem.exists(file))
@@ -336,8 +360,7 @@ class Paths
 
 		if (currentTrackedAssets.exists('__no_texture'))
 		{
-			if (!localTrackedAssets.contains('__no_texture'))
-				localTrackedAssets.push('__no_texture');
+			trackLocalAsset('__no_texture');
 			return currentTrackedAssets.get('__no_texture');
 		}
 
@@ -355,8 +378,7 @@ class Paths
 				return null;
 		}
 
-		if (!localTrackedAssets.contains(file))
-			localTrackedAssets.push(file);
+		trackLocalAsset(file);
 		/*if (bitmap.readable)
 		{
 			var texture:RectangleTexture = FlxG.stage.context3D.createRectangleTexture(bitmap.width, bitmap.height, BGRA, true);
@@ -432,8 +454,7 @@ class Paths
 		{
 			if (!currentTrackedSounds.exists(file))
 				currentTrackedSounds.set(file, Sound.fromFile(file));
-			if (!localTrackedAssets.contains(file))
-				localTrackedAssets.push(file);
+			trackLocalAsset(file);
 			return currentTrackedSounds.get(file);
 		}
 		#end
@@ -456,8 +477,7 @@ class Paths
 
 			if (currentTrackedSounds.exists(gottenPath))
 			{
-				if (!localTrackedAssets.contains(gottenPath))
-					localTrackedAssets.push(gottenPath);
+				trackLocalAsset(gottenPath);
 				return currentTrackedSounds.get(gottenPath);
 			}
 		}

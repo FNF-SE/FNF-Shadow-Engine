@@ -315,7 +315,11 @@ class Character extends FlxAnimate
 			finishAnimation();
 		}
 
-		if (getAnimationName().startsWith('sing'))
+		// Resolved once instead of the five separate getAnimationName() calls this used to make per
+		// character per frame (each one walking into the animation controller).
+		final animName:String = getAnimationName();
+
+		if (animName.startsWith('sing'))
 			holdTimer += elapsed;
 		else if (isPlayer)
 			holdTimer = 0;
@@ -327,9 +331,8 @@ class Character extends FlxAnimate
 			holdTimer = 0;
 		}
 
-		var name:String = getAnimationName();
-		if (isAnimationFinished() && animOffsets.exists('$name-loop'))
-			playAnim('$name-loop');
+		if (isAnimationFinished() && animOffsets.exists('$animName-loop'))
+			playAnim('$animName-loop');
 
 		super.update(elapsed);
 	}

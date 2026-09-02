@@ -363,14 +363,18 @@ class MusicBeatSubstate extends FlxSubState implements IMusicState
 			}
 		}
 
-		callOnScripts('onUpdate', [elapsed]);
+		if (hasScripts)
+		{
+			callOnScripts('onUpdate', [elapsed]);
 
-		setOnScripts('curDecStep', curDecStep);
-		setOnScripts('curDecBeat', curDecBeat);
+			setOnScripts('curDecStep', curDecStep);
+			setOnScripts('curDecBeat', curDecBeat);
+		}
 
 		super.update(elapsed);
 
-		callOnScripts('onUpdatePost', [elapsed]);
+		if (hasScripts)
+			callOnScripts('onUpdatePost', [elapsed]);
 	}
 
 	private function updateSection():Void
@@ -511,9 +515,20 @@ class MusicBeatSubstate extends FlxSubState implements IMusicState
 
 	// ── Script delegation ─────────────────────────────────────────
 
+	/** True when this substate has at least one Lua or HScript script loaded. */
+	public var hasScripts(get, never):Bool;
+
+	inline function get_hasScripts():Bool
+		return scripts != null && scripts.hasScripts;
+
+	// See MusicBeatState: the options structure is built by the caller, so skip the call entirely
+	// (and allocate nothing) when there is no script to receive it.
 	public function callOnScripts(funcToCall:String, args:Array<Dynamic> = null, ignoreStops = false, exclusions:Array<String> = null,
 			excludeValues:Array<Dynamic> = null):Dynamic
 	{
+		if (!hasScripts)
+			return ScriptResult.Continue;
+
 		return scripts.call(funcToCall, args, {
 			ignoreStops: ignoreStops,
 			exclusions: exclusions,
@@ -524,6 +539,9 @@ class MusicBeatSubstate extends FlxSubState implements IMusicState
 	public function callOnLuas(funcToCall:String, args:Array<Dynamic> = null, ignoreStops = false, exclusions:Array<String> = null,
 			excludeValues:Array<Dynamic> = null):Dynamic
 	{
+		if (scripts == null || scripts.luaArray.length == 0)
+			return ScriptResult.Continue;
+
 		return scripts.callOnLuas(funcToCall, args, {
 			ignoreStops: ignoreStops,
 			exclusions: exclusions,
@@ -534,6 +552,9 @@ class MusicBeatSubstate extends FlxSubState implements IMusicState
 	public function callOnHScript(funcToCall:String, args:Array<Dynamic> = null, ?ignoreStops:Bool = false, exclusions:Array<String> = null,
 			excludeValues:Array<Dynamic> = null):Dynamic
 	{
+		if (scripts == null || scripts.hscriptArray.length == 0)
+			return ScriptResult.Continue;
+
 		return scripts.callOnHScript(funcToCall, args, {
 			ignoreStops: ignoreStops,
 			exclusions: exclusions,
@@ -543,17 +564,20 @@ class MusicBeatSubstate extends FlxSubState implements IMusicState
 
 	public function setOnScripts(variable:String, arg:Dynamic, exclusions:Array<String> = null)
 	{
-		scripts.set(variable, arg, exclusions);
+		if (hasScripts)
+			scripts.set(variable, arg, exclusions);
 	}
 
 	public function setOnLuas(variable:String, arg:Dynamic, exclusions:Array<String> = null)
 	{
-		scripts.setOnLuas(variable, arg, exclusions);
+		if (scripts != null)
+			scripts.setOnLuas(variable, arg, exclusions);
 	}
 
 	public function setOnHScript(variable:String, arg:Dynamic, exclusions:Array<String> = null)
 	{
-		scripts.setOnHScript(variable, arg, exclusions);
+		if (scripts != null)
+			scripts.setOnHScript(variable, arg, exclusions);
 	}
 
 	public function startLuasNamed(luaFile:String, ?doFileMethod:String->Bool):Bool

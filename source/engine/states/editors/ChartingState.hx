@@ -2520,6 +2520,7 @@ class ChartingState extends MusicBeatState
 	override function destroy()
 	{
 		Note.globalRgbShaders = [];
+		Note.globalColorSwaps = [];
 		backend.NoteTypesConfig.clearNoteTypesData();
 		super.destroy();
 	}

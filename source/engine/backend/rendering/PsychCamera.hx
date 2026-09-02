@@ -16,8 +16,10 @@ class PsychCamera extends ShadowCamera
 		updateFlash(elapsed);
 		updateFade(elapsed);
 
-		flashSprite.filters = filtersEnabled ? filters : null;
-
+		// `FlxCamera.render()` already pushes `filters` onto the flash sprite every frame, and
+		// `DisplayObject.set_filters` clones every filter into a freshly allocated array each time.
+		// Doing it here as well meant paying that twice per camera per frame for any stage or mod
+		// using a camera shader.
 		updateFlashSpritePosition();
 		updateShake(elapsed);
 	}

@@ -326,11 +326,16 @@ class SScript
 			return null;
 		}
 
-		var l = locals();
-		if (l.exists(key))
-			return l[key];
+		// Same as exists(): read the scopes directly rather than building a throwaway copy of the
+		// local scope (and then building it a second time inside exists()).
+		if (interp.locals != null)
+		{
+			final declared = interp.locals.get(key);
+			if (declared != null)
+				return declared.r;
+		}
 
-		return if (exists(key)) interp.variables[key] else null;
+		return interp.variables.get(key);
 	}
 
 	public function call(func:String, ?args:Array<Dynamic>):FunctionCall
@@ -357,24 +362,48 @@ class SScript
 				returnValue: null
 			};
 
-		var time:Float = Timer.stamp();
-		var scriptFile:String = if (scriptFile != null && scriptFile.length > 0) scriptFile else "";
-		var caller:FunctionCall = {
-			exceptions: [],
-			calledFunction: func,
-			succeeded: false,
-			returnValue: null
-		}
+		// Restructured for the hot path. This function is invoked for every scripted event, on every
+		// loaded script, every frame (onUpdate/onUpdatePost) plus several times per note hit, so the
+		// original version's fixed overhead added up fast. It used to, on *every* call:
+		//   - build the result structure plus an empty exceptions array up front,
+		//   - allocate a `pushedExceptions` array and a `pushException` closure that the happy path
+		//     never touches,
+		//   - resolve the function via get() and then re-check exists() twice more - and back when
+		//     get()/exists() went through locals(), each of those copied the whole local scope into
+		//     a freshly allocated Map,
+		//   - allocate a second result structure on success.
+		// Now the happy path is: one scope lookup, one Reflect.callMethod, one result structure.
+		final time:Float = Timer.stamp();
+		final scriptFile:String = if (scriptFile != null && scriptFile.length > 0) scriptFile else "";
 
 		if (args == null)
 			args = new Array();
 
-		var pushedExceptions:Array<String> = new Array();
-		function pushException(e:String)
+		// Only materialised when something actually goes wrong.
+		var exceptions:Null<Array<SScriptException>> = null;
+		var pushedExceptions:Null<Array<String>> = null;
+
+		inline function pushException(e:String)
 		{
+			if (exceptions == null)
+			{
+				exceptions = new Array();
+				pushedExceptions = new Array();
+			}
 			if (!pushedExceptions.contains(e))
-				caller.exceptions.push(new SScriptException(new Exception(e)));
+				exceptions.push(new SScriptException(new Exception(e)));
 			pushedExceptions.push(e);
+		}
+
+		inline function result(succeeded:Bool, returnValue:Dynamic):FunctionCall
+		{
+			lastReportedCallTime = Timer.stamp() - time;
+			return {
+				exceptions: exceptions != null ? exceptions : [],
+				calledFunction: func,
+				succeeded: succeeded,
+				returnValue: returnValue
+			};
 		}
 
 		if (func == null)
@@ -382,56 +411,57 @@ class SScript
 			if (traces)
 				trace('Function name cannot be null for $scriptFile!');
 			pushException('Function name cannot be null for $scriptFile!');
-			return caller;
+			return result(false, null);
 		}
 
-		var fun = get(func);
-		if (exists(func) && Type.typeof(fun) != TFunction)
+		if (interp == null)
+		{
+			if (traces)
+				trace('Interpreter is null!');
+			pushException('Interpreter is null!');
+			return result(false, null);
+		}
+
+		// One lookup instead of get() + exists() + exists(). A non-null value means the name is
+		// bound, so exists() is only consulted to tell "bound to null" apart from "not bound".
+		final fun:Dynamic = get(func);
+		if (fun == null && !exists(func))
+		{
+			if (traces)
+				trace('Function $func does not exist in $scriptFile.');
+			if (scriptFile != null && scriptFile.length > 1)
+				pushException('Function $func does not exist in $scriptFile.');
+			else
+				pushException('Function $func does not exist in SScript instance.');
+			return result(false, null);
+		}
+
+		if (Type.typeof(fun) != TFunction)
 		{
 			if (traces)
 				trace('$func is not a function');
 			pushException('$func is not a function');
+			return result(false, null);
 		}
-		else if (interp == null || !exists(func))
-		{
-			if (interp == null)
-			{
-				if (traces)
-					trace('Interpreter is null!');
-				pushException('Interpreter is null!');
-			}
-			else
-			{
-				if (traces)
-					trace('Function $func does not exist in $scriptFile.');
-				if (scriptFile != null && scriptFile.length > 1)
-					pushException('Function $func does not exist in $scriptFile.');
-				else
-					pushException('Function $func does not exist in SScript instance.');
-			}
-		}
-		else
-		{
-			var oldCaller = caller;
-			try
-			{
-				var functionField:Dynamic = Reflect.callMethod(this, fun, args);
-				caller = {
-					exceptions: caller.exceptions,
-					calledFunction: func,
-					succeeded: true,
-					returnValue: functionField
-				};
-			}
-			catch (e)
-			{
-				caller = oldCaller;
-				caller.exceptions.insert(0, SScriptException.fromDynamic(e));
-			}
-		}
-		lastReportedCallTime = Timer.stamp() - time;
 
-		return caller;
+		var succeeded:Bool = false;
+		var returnValue:Dynamic = null;
+		try
+		{
+			returnValue = Reflect.callMethod(this, fun, args);
+			succeeded = true;
+		}
+		catch (e)
+		{
+			if (exceptions == null)
+			{
+				exceptions = new Array();
+				pushedExceptions = new Array();
+			}
+			exceptions.insert(0, SScriptException.fromDynamic(e));
+		}
+
+		return result(succeeded, returnValue);
 	}
 
 	public function clear():SScript
@@ -462,8 +492,11 @@ class SScript
 		if (interp == null)
 			return false;
 
-		var l = locals();
-		if (l.exists(key))
+		// This used to go through `locals()`, which allocates a fresh Map and copies every entry of
+		// `interp.locals` into it - just to answer a membership question. exists() is on the hottest
+		// path in the engine (ScriptManager.callOnHScript calls it for every event, on every script,
+		// and call() below used to call it up to three more times), so query the scope directly.
+		if (interp.locals != null && interp.locals.exists(key))
 			return true;
 
 		return interp.variables.exists(key);

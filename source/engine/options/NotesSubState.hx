@@ -728,6 +728,7 @@ class NotesSubState extends MusicBeatSubstate
 		}
 
 		Note.globalRgbShaders = [];
+		Note.globalColorSwaps = [];
 		for (i in 0...dataArray.length)
 		{
 			Note.initializeGlobalRGBShader(i);

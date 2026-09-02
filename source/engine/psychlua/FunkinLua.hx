@@ -1127,8 +1127,9 @@ class FunkinLua
 			if (lua == null)
 				return ScriptResult.Continue;
 
-			Lua.getglobal(lua, func);
-			var type:Int = Lua.type(lua, -1);
+			// lua_getglobal already returns the type of the value it pushed, so the extra
+			// Lua.type() call was a redundant C call on every scripted event, per script.
+			final type:Int = Lua.getglobal(lua, func);
 
 			if (type != Lua.TFUNCTION)
 			{

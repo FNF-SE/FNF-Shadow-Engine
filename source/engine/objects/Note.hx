@@ -8,6 +8,7 @@ import objects.StrumNote;
 import flixel.addons.effects.FlxSkewedSprite;
 import flixel.graphics.FlxGraphic;
 import flixel.math.FlxRect;
+import openfl.media.Sound;
 
 using StringTools;
 using backend.CoolUtil;
@@ -134,14 +135,67 @@ class Note extends FlxSkewedSprite
 	public var hitsoundChartEditor:Bool = true;
 	public var hitsound:String = 'hitsound';
 
+	// `Paths.sound()` builds mod paths and hits `FileSystem.exists()` before it reaches its cache.
+	// Doing that inside goodNoteHit() means a couple of stat() syscalls on every note press, which
+	// is one of the more expensive things you can do per-frame on Android. Resolve each hitsound
+	// name once and keep the Sound around; cleared with the note pool between songs.
+	static var _hitsoundCache:Map<String, Sound> = [];
+
+	public static function getHitsound(key:String):Null<Sound>
+	{
+		if (_hitsoundCache.exists(key))
+			return _hitsoundCache.get(key);
+
+		final snd:Null<Sound> = Paths.sound(key);
+		_hitsoundCache.set(key, snd);
+		return snd;
+	}
+
 	private static var _activeNotes:Array<Note> = [];
 	private static var notePool:Array<Note> = [];
+
+	// Index of this note inside `_activeNotes`, or -1 when it isn't active. `_activeNotes` holds
+	// every note of the chart (they're all built up-front), so the old `_activeNotes.remove(this)`
+	// was a linear scan over thousands of entries on every single note hit. Tracking the index lets
+	// us swap-remove in O(1); nothing depends on `_activeNotes` being ordered.
+	private var _activeIndex:Int = -1;
+
+	/** True while this note is sitting in `notePool`, so it can't be pooled twice. */
+	private var _pooled:Bool = false;
+
+	static function activateNote(note:Note):Void
+	{
+		if (note._activeIndex >= 0)
+			return;
+		note._activeIndex = _activeNotes.length;
+		_activeNotes.push(note);
+	}
+
+	static function deactivateNote(note:Note):Void
+	{
+		final index:Int = note._activeIndex;
+		if (index < 0)
+			return;
+
+		note._activeIndex = -1;
+
+		final last:Int = _activeNotes.length - 1;
+		if (index != last)
+		{
+			final moved:Note = _activeNotes[last];
+			_activeNotes[index] = moved;
+			if (moved != null)
+				moved._activeIndex = index;
+		}
+		_activeNotes.pop();
+	}
 
 	public static function getNote(strumTime:Float, noteData:Int, ?prevNote:Note, ?sustainNote:Bool = false, ?inEditor:Bool = false, ?createdFrom:Dynamic = null):Note
 	{
 		var note = notePool.pop();
 		if (note == null)
 			note = new Note();
+		note._pooled = false;
 		note.resetNote(strumTime, noteData, prevNote, sustainNote, inEditor, createdFrom);
 		return note;
 	}
@@ -149,14 +203,29 @@ class Note extends FlxSkewedSprite
 	public static function clearPool():Void
 	{
 		for (note in notePool)
+		{
+			note._pooled = false;
 			note.destroy();
+		}
 		notePool = [];
+		_hitsoundCache.clear();
+		for (note in _activeNotes)
+			if (note != null)
+				note._activeIndex = -1;
 		_activeNotes = [];
 	}
 
 	public function recycle():Void
 	{
-		_activeNotes.remove(this);
+		// invalidateNote() can legitimately be reached twice for the same note in one frame (a note
+		// killed for being late that a miss sweep also picks up). Without this guard the note would
+		// be pushed into `notePool` twice and getNote() could later hand the same object out to two
+		// different chart entries.
+		if (_pooled)
+			return;
+		_pooled = true;
+
+		deactivateNote(this);
 		kill();
 
 		// don't carry over shader/colorSwap state from the note's previous life -
@@ -226,9 +295,10 @@ class Note extends FlxSkewedSprite
 		if (ClientPrefs.data.disableRGBNotes)
 			if (noteData > -1 && noteData < ClientPrefs.data.arrowHSV.length)
 			{
-				colorSwap.hue = noteSplashHue = ClientPrefs.data.arrowHSV[noteData][0] / 360;
-				colorSwap.saturation = noteSplashSaturation = ClientPrefs.data.arrowHSV[noteData][1] / 100;
-				colorSwap.brightness = noteSplashBrightness = ClientPrefs.data.arrowHSV[noteData][2] / 100;
+				noteSplashHue = ClientPrefs.data.arrowHSV[noteData][0] / 360;
+				noteSplashSaturation = ClientPrefs.data.arrowHSV[noteData][1] / 100;
+				noteSplashBrightness = ClientPrefs.data.arrowHSV[noteData][2] / 100;
+				setColorSwap(noteSplashHue, noteSplashSaturation, noteSplashBrightness);
 			}
 		else
 			defaultRGB();
@@ -244,9 +314,8 @@ class Note extends FlxSkewedSprite
 					{
 						reloadNote('HURTNOTE_assets');
 						// note and splash data colors
-						colorSwap.hue = noteSplashHue = 0;
-						colorSwap.saturation = noteSplashSaturation = 0;
-						colorSwap.brightness = noteSplashBrightness = 0;
+						noteSplashHue = noteSplashSaturation = noteSplashBrightness = 0;
+						setColorSwap(0, 0, 0);
 
 						noteSplashData.texture = 'HURTnoteSplashes';
 					}
@@ -280,7 +349,7 @@ class Note extends FlxSkewedSprite
 			if (value != null && value.length > 1)
 				NoteTypesConfig.applyNoteTypeData(this, value);
 			if (hitsound != 'hitsound' && ClientPrefs.data.hitsoundVolume > 0)
-				Paths.sound(hitsound); // precache new sound for being idiot-proof
+				getHitsound(hitsound); // precache new sound for being idiot-proof
 			noteType = value;
 		}
 
@@ -297,7 +366,7 @@ class Note extends FlxSkewedSprite
 	function resetNote(strumTime:Float, noteData:Int, ?prevNote:Note, ?sustainNote:Bool = false, ?inEditor:Bool = false, ?createdFrom:Dynamic = null):Void
 	{
 		revive();
-		_activeNotes.push(this);
+		activateNote(this);
 
 		antialiasing = ClientPrefs.data.antialiasing;
 		if (createdFrom == null)
@@ -327,7 +396,7 @@ class Note extends FlxSkewedSprite
 			{
 				if (colorSwap == null)
 				{
-					colorSwap = new ColorSwap();
+					colorSwap = initializeGlobalColorSwap(noteData);
 					shader = colorSwap.shader;
 				}
 			}
@@ -401,6 +470,65 @@ class Note extends FlxSkewedSprite
 			centerOrigin();
 		}
 		x += offsetX;
+	}
+
+	/**
+	 * One shared `ColorSwap` per note direction, mirroring `globalRgbShaders`.
+	 *
+	 * With `disableRGBNotes` on, `resetNote()` used to do `new ColorSwap()` per note. Every note of
+	 * the chart is built up-front, so a 3000-note chart created 3000 `ColorSwapShader` instances -
+	 * each an openfl Shader with its own parameter objects, each paying the multi-KB GLSL-source
+	 * concat-and-hash that openfl uses as its program-cache key on first render. It also gave every
+	 * note a unique shader instance, which collapses flixel's quad batching to one draw call per
+	 * note. Notes now share by direction and only clone when they actually need different values
+	 * (see `setColorSwap`), exactly like `RGBShaderReference.cloneOriginal()`.
+	 */
+	public static var globalColorSwaps:Array<ColorSwap> = [];
+
+	public static function initializeGlobalColorSwap(noteData:Int):ColorSwap
+	{
+		if (globalColorSwaps[noteData] == null)
+		{
+			final newSwap:ColorSwap = new ColorSwap();
+			globalColorSwaps[noteData] = newSwap;
+
+			if (noteData > -1 && noteData < ClientPrefs.data.arrowHSV.length)
+			{
+				final arr:Array<Int> = ClientPrefs.data.arrowHSV[noteData];
+				newSwap.hue = arr[0] / 360;
+				newSwap.saturation = arr[1] / 100;
+				newSwap.brightness = arr[2] / 100;
+			}
+		}
+		return globalColorSwaps[noteData];
+	}
+
+	/**
+	 * Applies hue/saturation/brightness to this note's `colorSwap`, taking a private copy first if
+	 * the note is still sharing the global one for its direction. Values that match what's already
+	 * there change nothing, so the common case keeps sharing.
+	 */
+	function setColorSwap(hue:Float, saturation:Float, brightness:Float):Void
+	{
+		if (colorSwap == null)
+			return;
+
+		if (colorSwap.hue == hue && colorSwap.saturation == saturation && colorSwap.brightness == brightness)
+			return;
+
+		if (noteData > -1 && colorSwap == globalColorSwaps[noteData])
+		{
+			final ownSwap:ColorSwap = new ColorSwap();
+			ownSwap.hue = colorSwap.hue;
+			ownSwap.saturation = colorSwap.saturation;
+			ownSwap.brightness = colorSwap.brightness;
+			colorSwap = ownSwap;
+			shader = ownSwap.shader;
+		}
+
+		colorSwap.hue = hue;
+		colorSwap.saturation = saturation;
+		colorSwap.brightness = brightness;
 	}
 
 	public static function initializeGlobalRGBShader(noteData:Int)
@@ -647,7 +775,7 @@ class Note extends FlxSkewedSprite
 
 	override function destroy():Void
 	{
-		_activeNotes.remove(this);
+		deactivateNote(this);
 		super.destroy();
 	}
 

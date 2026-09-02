@@ -26,6 +26,15 @@ class ScriptManager
 
 	var state:IMusicState;
 
+	/** True when at least one Lua or HScript script is loaded. */
+	public var hasScripts(get, never):Bool;
+
+	inline function get_hasScripts():Bool
+		return luaArray.length > 0 || hscriptArray.length > 0;
+
+	/** Shared, never-mutated default for `opts.excludeValues`. */
+	static final DEFAULT_EXCLUDE_VALUES:Array<Dynamic> = [ScriptResult.Continue];
+
 	public function new(state:IMusicState)
 	{
 		this.state = state;
@@ -40,10 +49,8 @@ class ScriptManager
 			opts = {};
 		if (args == null)
 			args = [];
-		if (opts.exclusions == null)
-			opts.exclusions = [];
 		if (opts.excludeValues == null)
-			opts.excludeValues = [ScriptResult.Continue];
+			opts.excludeValues = DEFAULT_EXCLUDE_VALUES;
 
 		var luaResult = callOnLuas(funcToCall, args, opts);
 		var hsResult = callOnHScript(funcToCall, args, opts);
@@ -63,21 +70,25 @@ class ScriptManager
 			opts = {};
 		if (args == null)
 			args = [];
-		if (opts.exclusions == null)
-			opts.exclusions = [];
 		if (opts.excludeValues == null)
-			opts.excludeValues = [ScriptResult.Continue];
+			opts.excludeValues = DEFAULT_EXCLUDE_VALUES;
 
-		var toRemove:Array<FunkinLua> = [];
+		final exclusions:Null<Array<String>> = opts.exclusions;
+
+		// Allocated lazily - the overwhelming majority of calls never close a script, and this ran
+		// on every scripted event including the per-frame ones.
+		var toRemove:Null<Array<FunkinLua>> = null;
 		for (script in luaArray)
 		{
 			if (script.closed)
 			{
+				if (toRemove == null)
+					toRemove = [];
 				toRemove.push(script);
 				continue;
 			}
 
-			if (opts.exclusions.contains(script.scriptName))
+			if (exclusions != null && exclusions.contains(script.scriptName))
 				continue;
 
 			var myValue:Dynamic = script.call(funcToCall, args);
@@ -93,11 +104,16 @@ class ScriptManager
 				returnVal = myValue;
 
 			if (script.closed)
+			{
+				if (toRemove == null)
+					toRemove = [];
 				toRemove.push(script);
+			}
 		}
 
-		for (script in toRemove)
-			luaArray.remove(script);
+		if (toRemove != null)
+			for (script in toRemove)
+				luaArray.remove(script);
 		#end
 		return returnVal;
 	}
@@ -114,15 +130,16 @@ class ScriptManager
 			opts = {};
 		if (args == null)
 			args = [];
-		if (opts.exclusions == null)
-			opts.exclusions = [];
+		// Was `opts.excludeValues.push(ScriptResult.Continue)` - that mutated whatever array the
+		// caller handed in (and grew it by one entry per call if the caller reused it).
 		if (opts.excludeValues == null)
-			opts.excludeValues = [ScriptResult.Continue];
-		opts.excludeValues.push(ScriptResult.Continue);
+			opts.excludeValues = DEFAULT_EXCLUDE_VALUES;
+
+		final exclusions:Null<Array<String>> = opts.exclusions;
 
 		for (script in hscriptArray)
 		{
-			if (script == null || !script.exists(funcToCall) || opts.exclusions.contains(script.origin))
+			if (script == null || !script.exists(funcToCall) || (exclusions != null && exclusions.contains(script.origin)))
 				continue;
 
 			try
@@ -154,10 +171,10 @@ class ScriptManager
 		return returnVal;
 	}
 
+	// These run a dozen-plus times per gameplay frame (see PlayState.recalculateRating), so they
+	// take a null `exclusions` rather than allocating an empty array to scan against every time.
 	public function set(variable:String, arg:Dynamic, exclusions:Array<String> = null)
 	{
-		if (exclusions == null)
-			exclusions = [];
 		setOnLuas(variable, arg, exclusions);
 		setOnHScript(variable, arg, exclusions);
 	}
@@ -165,11 +182,12 @@ class ScriptManager
 	public function setOnLuas(variable:String, arg:Dynamic, exclusions:Array<String> = null)
 	{
 		#if FEATURE_LUA
-		if (exclusions == null)
-			exclusions = [];
+		if (luaArray.length == 0)
+			return;
+
 		for (script in luaArray)
 		{
-			if (exclusions.contains(script.scriptName))
+			if (exclusions != null && exclusions.contains(script.scriptName))
 				continue;
 			script.set(variable, arg);
 		}
@@ -179,14 +197,16 @@ class ScriptManager
 	public function setOnHScript(variable:String, arg:Dynamic, exclusions:Array<String> = null)
 	{
 		#if FEATURE_HSCRIPT
-		if (exclusions == null)
-			exclusions = [];
+		if (hscriptArray.length == 0)
+			return;
+
+		if (!instancesExclude.contains(variable))
+			instancesExclude.push(variable);
+
 		for (script in hscriptArray)
 		{
-			if (exclusions.contains(script.origin))
+			if (exclusions != null && exclusions.contains(script.origin))
 				continue;
-			if (!instancesExclude.contains(variable))
-				instancesExclude.push(variable);
 			script.set(variable, arg);
 		}
 		#end

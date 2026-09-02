@@ -390,19 +390,23 @@ class MusicBeatState extends FlxTransitionableState implements IMusicState
 		if (FlxG.save.data != null)
 			FlxG.save.data.fullscreen = FlxG.fullscreen;
 
-		stagesFunc(function(stage:BaseStage)
+		// Inlined from stagesFunc() - that took a closure, which was allocated every frame.
+		for (stage in stages)
+			if (stage != null && stage.exists && stage.active)
+				stage.update(elapsed);
+
+		if (hasScripts)
 		{
-			stage.update(elapsed);
-		});
+			callOnScripts('onUpdate', [elapsed]);
 
-		callOnScripts('onUpdate', [elapsed]);
-
-		setOnScripts('curDecStep', curDecStep);
-		setOnScripts('curDecBeat', curDecBeat);
+			setOnScripts('curDecStep', curDecStep);
+			setOnScripts('curDecBeat', curDecBeat);
+		}
 
 		super.update(elapsed);
 
-		callOnScripts('onUpdatePost', [elapsed]);
+		if (hasScripts)
+			callOnScripts('onUpdatePost', [elapsed]);
 	}
 
 	private function updateSection():Void
@@ -593,9 +597,22 @@ class MusicBeatState extends FlxTransitionableState implements IMusicState
 
 	// ── Script delegation ─────────────────────────────────────────
 
+	/** True when this state has at least one Lua or HScript script loaded. */
+	public var hasScripts(get, never):Bool;
+
+	inline function get_hasScripts():Bool
+		return scripts != null && scripts.hasScripts;
+
+	// The `{ignoreStops: ..., exclusions: ..., excludeValues: ...}` structure below is built by the
+	// *caller*, so it was allocated on every one of these calls even when no scripts were loaded at
+	// all and ScriptManager was about to bail out immediately. Gameplay makes a dozen-plus of these
+	// per frame plus several per note, so check first and allocate nothing in the common case.
 	public function callOnScripts(funcToCall:String, args:Array<Dynamic> = null, ignoreStops = false, exclusions:Array<String> = null,
 			excludeValues:Array<Dynamic> = null):Dynamic
 	{
+		if (!hasScripts)
+			return ScriptResult.Continue;
+
 		return scripts.call(funcToCall, args, {
 			ignoreStops: ignoreStops,
 			exclusions: exclusions,
@@ -606,6 +623,9 @@ class MusicBeatState extends FlxTransitionableState implements IMusicState
 	public function callOnLuas(funcToCall:String, args:Array<Dynamic> = null, ignoreStops = false, exclusions:Array<String> = null,
 			excludeValues:Array<Dynamic> = null):Dynamic
 	{
+		if (scripts == null || scripts.luaArray.length == 0)
+			return ScriptResult.Continue;
+
 		return scripts.callOnLuas(funcToCall, args, {
 			ignoreStops: ignoreStops,
 			exclusions: exclusions,
@@ -616,6 +636,9 @@ class MusicBeatState extends FlxTransitionableState implements IMusicState
 	public function callOnHScript(funcToCall:String, args:Array<Dynamic> = null, ?ignoreStops:Bool = false, exclusions:Array<String> = null,
 			excludeValues:Array<Dynamic> = null):Dynamic
 	{
+		if (scripts == null || scripts.hscriptArray.length == 0)
+			return ScriptResult.Continue;
+
 		return scripts.callOnHScript(funcToCall, args, {
 			ignoreStops: ignoreStops,
 			exclusions: exclusions,
@@ -625,17 +648,22 @@ class MusicBeatState extends FlxTransitionableState implements IMusicState
 
 	public function setOnScripts(variable:String, arg:Dynamic, exclusions:Array<String> = null)
 	{
+		if (!hasScripts)
+			return;
+
 		scripts.set(variable, arg, exclusions);
 	}
 
 	public function setOnLuas(variable:String, arg:Dynamic, exclusions:Array<String> = null)
 	{
-		scripts.setOnLuas(variable, arg, exclusions);
+		if (scripts != null)
+			scripts.setOnLuas(variable, arg, exclusions);
 	}
 
 	public function setOnHScript(variable:String, arg:Dynamic, exclusions:Array<String> = null)
 	{
-		scripts.setOnHScript(variable, arg, exclusions);
+		if (scripts != null)
+			scripts.setOnHScript(variable, arg, exclusions);
 	}
 
 	public function startLuasNamed(luaFile:String, ?doFileMethod:String->Bool):Bool

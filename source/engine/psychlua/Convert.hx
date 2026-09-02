@@ -37,6 +37,38 @@ class Convert
 
 	public static function toLua(l:State, v:Dynamic):Bool
 	{
+		// Fast paths before the switch: `Type.typeof()` builds a fresh enum instance for the
+		// parameterised constructors (TClass/TEnum), so every string argument handed to a Lua
+		// callback used to allocate one. null/String/Array are the cases worth short-circuiting;
+		// TInt/TFloat/TBool use argument-less constructors and don't allocate, so they can stay in
+		// the switch below.
+		if (v == null)
+		{
+			Lua.pushnil(l);
+			return true;
+		}
+
+		if ((v is String))
+		{
+			Lua.pushstring(l, cast(v, String));
+			return true;
+		}
+
+		if ((v is Array))
+		{
+			final elements:Array<Dynamic> = v;
+
+			Lua.createtable(l, elements.length, 0);
+
+			for (i in 0...elements.length)
+			{
+				Lua.pushinteger(l, i + 1);
+				toLua(l, elements[i]);
+				Lua.settable(l, -3);
+			}
+			return true;
+		}
+
 		switch (Type.typeof(v))
 		{
 			case TInt:
