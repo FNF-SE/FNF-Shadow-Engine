@@ -362,13 +362,12 @@ class SScript
 				returnValue: null
 			};
 
-		// Restructured for the hot path. This function is invoked for every scripted event, on every
-		// loaded script, every frame (onUpdate/onUpdatePost) plus several times per note hit, so the
-		// original version's fixed overhead added up fast. It used to, on *every* call:
+		// Restructured for the hot path. Host engines invoke this for every scripted event, on every
+		// loaded script, every frame, so the fixed overhead matters. It used to, on *every* call:
 		//   - build the result structure plus an empty exceptions array up front,
-		//   - allocate a `pushedExceptions` array and a `pushException` closure that the happy path
-		//     never touches,
-		//   - resolve the function via get() and then re-check exists() twice more - and back when
+		//   - allocate a `pushedExceptions` array and a `pushException` closure the happy path never
+		//     touches,
+		//   - resolve the function via get() and then re-check exists() twice more - and while
 		//     get()/exists() went through locals(), each of those copied the whole local scope into
 		//     a freshly allocated Map,
 		//   - allocate a second result structure on success.
@@ -494,8 +493,8 @@ class SScript
 
 		// This used to go through `locals()`, which allocates a fresh Map and copies every entry of
 		// `interp.locals` into it - just to answer a membership question. exists() is on the hottest
-		// path in the engine (ScriptManager.callOnHScript calls it for every event, on every script,
-		// and call() below used to call it up to three more times), so query the scope directly.
+		// path for any host engine (called for every scripted event, on every script, and by call()
+		// below up to three more times), so query the scopes directly.
 		if (interp.locals != null && interp.locals.exists(key))
 			return true;
 
